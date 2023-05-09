@@ -1,7 +1,3 @@
-import re
-import pdb
-import sys
-from collections import Counter
 import copy
 # token分类
 TOKEN_STYLE = [

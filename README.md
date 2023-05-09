@@ -14,15 +14,23 @@
 - 输出Token和语法树，以及程式的运行结果
 - 基本的报错提醒，未标志行列
 
+### V2.0
+
+2023 5.9
+
+- 实现了嵌套的循环功能
+- 增加`break`和`continue`关键字及其功能实现
+- 添加`bool`类型常量
+
 ## Functions
 
-基本变量类型：int,float,string
+基本变量类型：int float string bool
 
-基本四则运算：+,-,*,\
+基本四则运算：+ - * \
 
-基本比较运算：>，<，==,>=,<=,!=
+基本比较运算：> < == >= <= !=
 
-基本逻辑运算：&,|,!,^
+基本逻辑运算：& | ! ^
 
 变量声明、变量赋值、变量初始化
 
@@ -62,8 +70,6 @@ yesyesyesyesyes
 
 ## TODO
 
-- 增加嵌套循环功能
-- 增加`break`和`continue`关键字的功能实现
 - 增加函数递归调用功能
 - 增加数组变量类型
 - 美观的IDE界面以及友好的报错提醒
@@ -71,4 +77,4 @@ yesyesyesyesyes
 
 ## Environment
 
-- Python version:
+- Python version 3.9.7
