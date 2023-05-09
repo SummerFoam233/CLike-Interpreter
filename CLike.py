@@ -6,7 +6,8 @@ import copy
 # token分类
 TOKEN_STYLE = [
     'KEY_WORD', 'IDENTIFIER', 'DIGIT_CONSTANT',
-    'OPERATOR', 'SEPARATOR', 'STRING_CONSTANT'
+    'OPERATOR', 'SEPARATOR', 'STRING_CONSTANT',
+    'BOOL_CONSTANT'
 ]
 
 # 具体化关键字、运算符、分隔符
@@ -22,6 +23,8 @@ DETAIL_TOKEN_STYLE = {
     'elif': 'ELIF',
     'else': 'ELSE',
     'return': 'RETURN',
+    'break': 'BREAK',
+    'continue': 'CONTINUE',
     '=': 'ASSIGN',
     '&': 'AND',
     '|': 'OR',
@@ -55,6 +58,7 @@ keywords = [
     ['int', 'float', 'string', 'bool', 'func'],
     ['if', 'for', 'while', 'else','elif'],
     ['return'],
+    ['break','continue']
 ]
 
 # 运算符
@@ -78,8 +82,15 @@ file_name = None
 # 文件内容
 content = None
 
-# 错误信息全局变量
-ERROR_MESSAGE = None
+
+# 程序异常
+class ProgramError(Exception):
+    def __init__(self,ErrorInfo):
+        super().__init__(self) #初始化父类
+        self.errorinfo=ErrorInfo
+    def __str__(self):
+        return self.errorinfo
+
 class Token:
     def __init__(self, token_type, token_value, line_num):
         self.type = token_type
@@ -90,8 +101,6 @@ class Token:
         return f"Type: {self.type}, Value: {self.value}, Line: {self.line}"
 
 # 定义一个词法分析器类
-
-
 class Lexer:
     def __init__(self, file_name):
         global content
@@ -165,9 +174,9 @@ class Lexer:
                 token_type = DETAIL_TOKEN_STYLE[token_value]
             else:
                 token_type = TOKEN_STYLE[1]
-            # 布尔值设置为常量类型
+            # 布尔值设置为布尔类型
             if token_value == "True" or token_value == "False":
-                token_type = TOKEN_STYLE[2]
+                token_type = TOKEN_STYLE[6]
 
         # 判断是否为数字常量
         elif content[0].isdigit():
@@ -210,11 +219,16 @@ class Lexer:
                         token_value += content[0]
                         self.move_pointer(1)
                 except:
-                    print("无法找到右引号，请检查行{}字符串定义是否正确!".format(line_num))
-                    sys.exit(0)
+                    print("无法找到右引号，请检查字符串定义是否正确 in line {}!".format(line_num))
+                    raise ProgramError("无法找到右引号，请检查字符串定义是否正确 in line {}!".format(line_num))
+                    
                 token_value += content[0]
                 self.move_pointer(1)
                 token_type = TOKEN_STYLE[5]
+                if '\"' in token_value[1:-1]:
+                    print("字符串中暂不支持引号!")
+                    raise ProgramError("字符串中暂不支持引号 in line {}!".format(line_num))
+                    
             else:
                 token_value += content[0]
                 token_type = DETAIL_TOKEN_STYLE[token_value]
@@ -253,18 +267,16 @@ class Lexer:
         return Token_list
 
 # 语法树节点
-
-
 class SyntaxTreeNode(object):
     def __init__(self, value=None, _type=None, extra_info=None):
-        # 节点的值，为文法中的终结符或者非终结符
-        self.value = value
+        self.value = value # 节点值
         self.type = _type  # token类型
         self.extra_info = extra_info  # token的额外信息：类型、关键字等
         self.father = None  # 父节点
         self.left = None  # 左树
         self.right = None  # 右树
         self.first_son = None  # 父节点的第一个子树
+        self.line = None # 节点所在行数
         
     # 设置value
     def set_value(self, value):
@@ -342,12 +354,11 @@ class SyntaxTree(object):
 
 class Parser(object):
     '''语法分析器'''
-
     def __init__(self, tokens):
         self.tokens = tokens
         if not tokens:
             print("build successfully!")
-            sys.exit(0)
+            
         # tokens下标
         self.index = 0
         # 最终生成的语法树
@@ -377,6 +388,12 @@ class Parser(object):
             # 控制流语句
             elif sentence_pattern == 'CONTROL':
                 self.control_statement(sentence_tree.root)
+            # break语句
+            elif sentence_pattern == 'BREAK':
+                self.break_statement(sentence_tree.root)
+            # continue语句 
+            elif sentence_pattern == 'CONTINUE':
+                self.continue_statement(sentence_tree.root)
             # return语句
             elif sentence_pattern == 'RETURN':
                 self.return_statement(sentence_tree.root)
@@ -388,7 +405,8 @@ class Parser(object):
                 break
             else:
                 print('遇到了错误的句型 in line {}!'.format(self.tokens[self.index].line))
-                sys.exit(0)
+                raise ProgramError('遇到了错误的句型 in line {}!').format(self.tokens[self.index].line)
+                
 
     # 函数声明
     def function_statment(self, father=None):
@@ -405,7 +423,8 @@ class Parser(object):
             if self.tokens[self.index].value in keywords[0]:
                 if self.tokens[self.index].value != 'func':
                     print("函数关键字仅支持func!")
-                    sys.exit(0)
+                    raise ProgramError('函数关键字仅支持func in line {}').format(self.tokens[self.index].line)
+                    
                 return_type = SyntaxTreeNode('Type')
                 func_statement_tree.add_child_node(return_type)
                 func_statement_tree.add_child_node(
@@ -457,14 +476,19 @@ class Parser(object):
                                 elif self.tokens[self.index].value == 'int' or self.tokens[self.index].value == 'float':
                                     func_statement_tree.add_child_node(
                                         SyntaxTreeNode(self.tokens[self.index+3].value, '_Constant'), param)
+                                elif self.tokens[self.index].value == 'bool':
+                                    func_statement_tree.add_child_node(
+                                        SyntaxTreeNode(self.tokens[self.index+3].value, 'BOOL_CONSTANT'), param)
                                 self.index += 2
                                 continue
                             else:
                                 print("函数定义参数错误！参数之间须以分割符逗号进行分割！")
-                                sys.exit(0)
+                                raise ProgramError("函数定义参数错误！参数之间须以分割符逗号进行分割 in line {}!".format(self.tokens[self.index].line))
+                                
                         else:
                             print('函数定义参数错误!')
-                            sys.exit(0)
+                            raise ProgramError("函数定义参数错误 in line {}!".format(self.tokens[self.index].line))
+                            
                         self.index += 1
                     self.index += 1
                 self.index += 1
@@ -475,7 +499,8 @@ class Parser(object):
                 break
             else:
                 print("function statement error!")
-                sys.exit(0)
+                raise ProgramError('函数声明错误!')
+                
 
     # 变量初始化语句：变量初始化只支持单个变量初始化，不支持混杂声明和初始化同时进行
     def variable_initiazation(self, father=None):
@@ -542,6 +567,8 @@ class Parser(object):
                 if self.tokens[self.index].type == 'IDENTIFIER':
                     func_call_tree.add_child_node(
                         SyntaxTreeNode(self.tokens[self.index].value, 'FUNCTION_NAME'))
+                    func_name = self.tokens[self.index].value
+                    line = self.tokens[self.index].line
                 # 左小括号
                 elif self.tokens[self.index].type == 'LL_BRACKET':
                     self.index += 1
@@ -559,10 +586,12 @@ class Parser(object):
                             self.index += 1
                     except:
                         print("函数调用缺少')'!")
-                        sys.exit(0)
+                        raise ProgramError('函数{}调用缺少右括号 in line {}!').format(func_name,line)
+                        
                 else:
                     print('function call error!')
-                    sys.exit(0)
+                    raise ProgramError('函数{}调用错误 in line {}!').format(func_name,line)
+                    
                 self.index += 1
             self.index += 1
 
@@ -659,16 +688,20 @@ class Parser(object):
                             if self.tokens[self.index].type == 'IDENTIFIER' or self.tokens[self.index].type == 'DIGIT_CONSTANT' or self.tokens[self.index].type == 'STRING_CONSTANT':
                                 func_call_tree.add_child_node(
                                     SyntaxTreeNode(self.tokens[self.index].value, self.tokens[self.index].type), params_list)
+                                func_name = self.tokens[self.index].value
+                                line = self.tokens[self.index].line
                             elif self.tokens[self.index].type == 'AND':
                                 func_call_tree.add_child_node(
                                     SyntaxTreeNode(self.tokens[self.index].value, 'AND'), params_list)
                             self.index += 1
                     except:
                         print("函数调用缺少')'!")
-                        sys.exit(0)
+                        raise ProgramError('函数{}调用缺少右括号 in line {}').format(func_name,line)
+                        
                 else:
                     print('function call error!')
-                    sys.exit(0)
+                    raise ProgramError('函数{}调用错误 in line {}').format(func_name,line)
+                    
                 self.index += 1
             self.index += 1
 
@@ -689,7 +722,8 @@ class Parser(object):
             self.index += 1
         else:
             print('error: lack of left bracket!')
-            sys.exit(0)
+            raise ProgramError('while循环缺少左括号 in line {}').format(self.tokens[self.index].line)
+            
         # 左大括号
         if self.tokens[self.index].type == 'LB_BRACKET':
             self.process_bracket(while_tree)
@@ -719,13 +753,19 @@ class Parser(object):
                     if self.tokens[self.index].value != 'func':
                         sentence_pattern = self.get_sentence_pattern()
                         if sentence_pattern != 'VARIABLE_INITIALIZATION':
-                            print("错误的变量初始化方式：行{}".format(
+                            print("错误的变量初始化方式：in line {}".format(
                                 self.tokens[self.index].line))
-                            sys.exit(0)
+                            raise ProgramError("错误的变量初始化方式：in line {}".format(
+                                self.tokens[self.index].line))
+                            
                         self.variable_initiazation(for_tree.root)
                     else:
-                        print("错误的变量初始化类型：func;行{}".format(
+                        print("错误的变量初始化类型：func in line {}".format(
                             self.tokens[self.index].line))
+                        raise ProgramError("错误的变量初始化类型：func in line {}".format(
+                            self.tokens[self.index].line))
+                        
+                        
                 # 要么就是赋值
                 else:
                     self.assignment_statement(for_tree.root)
@@ -743,7 +783,61 @@ class Parser(object):
         current_node = for_tree.root.first_son.right.right
         next_node = current_node.right
         for_tree.switch(current_node, next_node)
-
+    
+    # break语句
+    def break_statement(self,father=None):
+        grand = father.father
+        if not grand or grand.type !='ForControl' and grand.type !='WhileControl' and grand.father.type !='IfElseControl':
+            print("错误的break语句使用地点，break语句仅支持在For和While循环体中使用!")
+            raise ProgramError("错误的break语句使用地点，break语句仅支持在For和While循环体中使用 in line {}!".format(self.tokens[self.index].line))
+        
+        if grand.father.type =='IfElseControl':
+            current_node = grand.father
+            while current_node:
+                if current_node.type != 'ForControl' and current_node.type != 'WhileControl':
+                    current_node = current_node.father
+                elif current_node.value == 'FunctionStatement':
+                    current_node = None
+                else:
+                    break 
+            if not current_node:
+                raise ProgramError("错误的break语句使用地点，break语句仅支持在For和While循环体中使用 in line {}!".format(self.tokens[self.index].line))
+        
+        self.tree.add_child_node(SyntaxTreeNode('BREAK'),father)
+        self.index += 1
+        if self.tokens[self.index].type != 'SEMICOLON':
+            print("缺少分号 in line {}".format(self.tokens[self.index-1].line))
+            raise ProgramError("缺少分号 in line {}".format(self.tokens[self.index-1].line))
+            
+        self.index += 1
+          
+    # continue语句
+    def continue_statement(self,father=None):
+        grand = father.father
+        if not grand or grand.type !='ForControl' and grand.type !='WhileControl' and grand.father.type !='IfElseControl':
+            print("错误的break语句使用地点，break语句仅支持在For和While循环体中使用!")
+            raise ProgramError("错误的break语句使用地点，break语句仅支持在For和While循环体中使用 in line {}!".format(self.tokens[self.index].line))
+        
+        if grand.father.type =='IfElseControl':
+            current_node = grand.father
+            while current_node:
+                if current_node.type != 'ForControl' and current_node.type != 'WhileControl':
+                    current_node = current_node.father
+                elif current_node.value == 'FunctionStatement':
+                    current_node = None
+                else:
+                    break 
+            if not current_node:
+                raise ProgramError("错误的break语句使用地点，break语句仅支持在For和While循环体中使用 in line {}!".format(self.tokens[self.index].line))
+            
+        self.tree.add_child_node(SyntaxTreeNode('CONTINUE'),father)
+        self.index+=1
+        if self.tokens[self.index].type != 'SEMICOLON':
+            print("缺少分号 in line {}".format(self.tokens[self.index-1].line))
+            raise ProgramError("缺少分号 in line {}".format(self.tokens[self.index-1].line))
+            
+        self.index += 1
+        
     # if语句
     def ifelse_statement(self, father=None):
         if_else_tree = SyntaxTree()
@@ -769,7 +863,8 @@ class Parser(object):
                 self.index += 1
             else:
                 print('error: lack of left bracket!')
-                sys.exit(0)
+                raise ProgramError("if语句缺少左括号 in line {}".format(self.tokens[self.index].line))
+                
 
             # 左大括号
             if self.tokens[self.index].type == 'LB_BRACKET':
@@ -792,7 +887,8 @@ class Parser(object):
                 self.index += 1
             else:
                 print('error: lack of left bracket!')
-                sys.exit(0)
+                raise ProgramError("elif语句缺少左括号 in line {}".format(self.tokens[self.index].line))
+                
 
             # 左大括号
             if self.tokens[self.index].type == 'LB_BRACKET':
@@ -818,7 +914,8 @@ class Parser(object):
             self.for_statement(father)
         else:
             print('error: control style not supported!')
-            sys.exit(0)
+            raise ProgramError("控制语句类型不支持 in line {}!".format(self.tokens[self.index].line))
+            
     
     # 自增或自减操作
     def _self_process(self,process_type,father=None):
@@ -867,6 +964,13 @@ class Parser(object):
                     'Expression', 'Constant')
                 tree.add_child_node(
                     SyntaxTreeNode(self.tokens[self.index].value, '_Constant'))
+                reverse_polishexpression_statement.append(tree)
+            elif self.tokens[self.index].type == 'BOOL_CONSTANT':
+                tree = SyntaxTree()
+                tree.current = tree.root = SyntaxTreeNode(
+                    'Expression', 'Constant')
+                tree.add_child_node(
+                    SyntaxTreeNode(self.tokens[self.index].value, 'BOOL_CONSTANT'))
                 reverse_polishexpression_statement.append(tree)
             # 如果是字符串常量
             if self.tokens[self.index].type == 'STRING_CONSTANT':
@@ -944,7 +1048,8 @@ class Parser(object):
                         a = operand_stack.pop()
                     except:
                         print("ERROR:请检查运算符{}是否具有两个操作数!".format(item.current.value))
-                        sys.exit(0)
+                        raise ProgramError("请检查运算符{}是否具有两个操作数 in line {}!".format(item.current.value,self.tokens[self.index].line))
+                        
                     new_tree = SyntaxTree()
                     new_tree.current = new_tree.root = SyntaxTreeNode(
                         'Expression', 'DoubleOperand',reverse_polishexpression_statement)
@@ -957,7 +1062,8 @@ class Parser(object):
                     operand_stack.append(new_tree)
                 else:
                     print('operator %s not supported!' % item.current.value)
-                    sys.exit(0)
+                    raise ProgramError("运算符{}不支持 in line {}!".format(item.current.value,self.tokens[self.index].line))
+                    
         self.tree.add_child_node(operand_stack[0].root, father)
     # 函数调用
     def function_call_statement(self, father=None):
@@ -989,10 +1095,12 @@ class Parser(object):
                         self.index += 1
                 except:
                     print("函数调用缺少')'!")
-                    sys.exit(0)
+                    raise ProgramError("函数调用缺少右括号 in line {}!".format(self.tokens[self.index].line))
+                    
             else:
                 print('function call error!')
-                sys.exit(0)
+                raise ProgramError("函数调用错误 in line {}!".format(self.tokens[self.index].line))
+                
             self.index += 1
         self.index += 1
 
@@ -1037,7 +1145,8 @@ class Parser(object):
                 # 不可用==进行变量初始化中的赋值
                 if third_next_token_type == 'ASSIGN':
                     print("错误的初始化方式:==")
-                    sys.exit(0)
+                    raise ProgramError("错误的初始化方式'==' in line {}!".format(self.tokens[self.index].line))
+                    
                 return 'VARIABLE_INITIALIZATION'
             else:
                 return 'ERROR'
@@ -1053,7 +1162,13 @@ class Parser(object):
                     return 'ASSIGNMENT'
                 else:
                     return 'ERROR'
-            
+        
+        # break语句
+        elif token_type == 'BREAK':
+            return 'BREAK'
+        # continue语句
+        elif token_type == 'CONTINUE':
+            return 'CONTINUE'
         # return语句
         elif token_type == 'RETURN':
             return 'RETURN'
@@ -1083,7 +1198,8 @@ class Parser(object):
                 self.function_call_statement()
             else:
                 print('main error!')
-                sys.exit(0)
+                raise ProgramError("主函数错误 in line {}!".format(self.tokens[self.index].line))
+                
 
     # DFS遍历并可视化树结构
     def display(self, node, depth=0):
@@ -1105,13 +1221,17 @@ class Semantic(object):
         self.root = ast
         # 语法类型
         self.sentence_type = ['Sentence', 'FunctionStatement', 'VARIABLE_INITIALIZATION',
-                              'Statement', 'FunctionCall', 'Assignment', 'Control', 'Expression', 'Return']
+                              'Statement', 'FunctionCall', 'Assignment', 'Control', 'Expression', 'Return','BREAK','CONTINUE']
         # 表达式中的符号栈
         self.operator_stack = []
         # 表达式中的操作符栈
         self.operand_stack = []
         # 表达式栈，用于遍历表达式
         self.expres_stack = []
+        # 最大递归深度
+        self.max_recursion_depth = 1000
+        # 递归栈
+        self.recursion_stack = {}
         # 运算符优先级规则全局变量
         self.operator_priority = {
             '+': 1,
@@ -1142,20 +1262,24 @@ class Semantic(object):
         self.function_call_flag = {}
         # 内置函数返回值变量
         self.inside_function_return_value_dict = {}
-        # 已经声明了多少个label
-        self.label_cnt = 0
-        # ifelse中的标签
-        self.labels_ifelse = {}
         # 符号字典：存储多个函数块作用域内的变量，初始默认含有main函数的变量字典
         self.symbol_dict = {'main': {}}
         # 符号表
         self.symbol_table = {}
         # 当前函数
         self.current_function = None
-        # 语法树转列表
+        # 主函数节点
+        self.main_node = None
+        # 语法树转列表-->暂时没用
         self.ast_node_stack.append(self.root)
         self.ast_to_stack(self.root)
-
+        # 循环跳转标志(break,continue)
+        self.loop_finish_flag = False
+        # 预遍历所有函数
+        self._pre_traverse(self.root)
+        # 预编译后，当前函数设为main
+        self.current_function = 'main'
+        
     def ast_to_stack(self, node):
         if not node:
             return
@@ -1164,7 +1288,7 @@ class Semantic(object):
             self.ast_node_stack.append(child)
             self.ast_to_stack(child)
             child = child.right
-            
+    
     # 函数定义句型
     def _function_statement(self, node=None):
         # 第一个儿子
@@ -1179,12 +1303,14 @@ class Semantic(object):
                 if current_node.first_son.value != 'main':
                     if current_node.first_son.value in inside_function:
                         print("错误的函数命名：{}是内置函数!".format(current_node.first_son.value))
-                        sys.exit(0)
-                    self.current_function = current_node.first_son.value
+                        raise ProgramError("错误的函数命名：{}是内置函数!".format(current_node.first_son.value))
+                        
+                    func_name = current_node.first_son.value
+                    self.current_function = func_name
                     self.symbol_table = {}  # 清空符号表
                     # 创建self.current_function函数名的符号表
-                    self.symbol_dict[self.current_function] = {}
-                    self.function_init_status_dict[self.current_function] = {}
+                    self.symbol_dict[func_name] = {}
+                    self.function_init_status_dict[func_name] = {}
                     # 临时节点1
                     tmp_node_1 = current_node.right  # StateParameterList
                     while tmp_node_1.value != 'Sentence':
@@ -1206,7 +1332,8 @@ class Semantic(object):
                                 self.symbol_table[tmp_parameter_name] = {
                                     'type': 'PARAMETER', 'field_type': tmp_parameter_type, 'value': tmp_parameter_value, 'init': flag}
                                 tmp_node_2 = tmp_node_2.right
-                            self.symbol_dict[self.current_function] = self.symbol_table
+
+                            self.symbol_dict[func_name] = self.symbol_table
                         tmp_node_1 = tmp_node_1.right
 
                 else:  # 如果是main函数
@@ -1217,10 +1344,31 @@ class Semantic(object):
                 if self.current_function != "main":  # 调用函数直接从Sentence开始进入，不再进行参数定义
                     self.function_statement_node_dict[self.current_function] = {
                         'in_node': current_node.first_son, 'out_node': None}
+                else:
+                    self.main_node = current_node
                 if current_node.first_son:
-                    self.traverse(current_node.first_son)
+                    self._pre_traverse(current_node.first_son)
             current_node = current_node.right
-
+    
+    # 预扫描，将所有的函数声明加入符号表
+    def _pre_traverse(self,node=None):
+        self._pre_handler(node)
+        next_node = node.right
+        while next_node:
+            self._pre_handler(next_node)
+            next_node = next_node.right
+    
+    def _pre_handler(self,node=None):
+        if not node:
+            return
+        if node.value in self.sentence_type:
+            # 句型
+            if node.value == 'Sentence':
+                self._pre_traverse(node.first_son)
+            # 函数声明
+            if node.value == 'FunctionStatement':
+                self._function_statement(node)
+                
     # 简单的sizeof
     def _sizeof(self, _type):
         size = -1
@@ -1251,6 +1399,8 @@ class Semantic(object):
             return value[0] == '\"'
     
     def judge_type(self,value):
+        if isinstance(value,bool):
+            return "bool"
         if isinstance(value,int):
             return "int"
         elif isinstance(value,float):
@@ -1274,7 +1424,9 @@ class Semantic(object):
             return 'ERROR'
     
     def judge_constant_value_type(self,value):
-        if isinstance(value,int) or isinstance(value,float):
+        if isinstance(value,bool):
+            return "BOOL_CONSTANT"
+        elif isinstance(value,int) or isinstance(value,float):
             return "DIGIT_CONSTANT"
         elif isinstance(value,str):
             if value[0] =='\"':
@@ -1306,25 +1458,21 @@ class Semantic(object):
             if current_node.type == 'FUNCTION_NAME':
                 func_name = current_node.value
                 if func_name == 'main':
-                    print("main函数不支持调用!")
-                    sys.exit(0)
-                                        
+                    raise ProgramError("main函数不支持调用!")
                 # 如果是内置函数
-                elif func_name in inside_function:
+                if func_name in inside_function:
                     is_inside_flag = 1
-                    pass
+                                         
                 # 如果是自定义函数
-                if not copy_symbol_table and not is_inside_flag:
+                elif not copy_symbol_table and not is_inside_flag:
                     if func_name == self.current_function:
-                        print("暂不支持递归调用!")
-                        sys.exit(0)
+                        raise ProgramError("暂不支持递归调用!")
+
                     self.function_call_flag[func_name] = True
-                    copy_symbol_table = copy.deepcopy(self.symbol_dict[func_name])
-                else:
-                    # 如果函数尚未声明
-                    if func_name not in self.symbol_dict and not is_inside_flag:
-                        print("函数{}尚未定义，无法调用!".format(func_name))
-                        sys.exit(0)
+                    try:
+                        copy_symbol_table = copy.deepcopy(self.symbol_dict[func_name])
+                    except RecursionError:
+                        raise ProgramError("递归层数已达到最大值:{},终止运行!".format(self.max_recursion_depth))
 
             # 函数参数
             elif current_node.value == 'CallParameterList':
@@ -1346,19 +1494,21 @@ class Semantic(object):
                     # 是某个变量
                     elif tmp_node.type == 'IDENTIFIER':
                         if tmp_node.value not in self.symbol_dict[self.current_function]:
-                            print("变量{}尚未声明，或者字符串{}内部有多余的引号!".format(tmp_node.value,tmp_node.value))
-                            sys.exit(0)
+                            raise ProgramError("变量{}尚未声明!".format(tmp_node.value))
+                            
                         else:
                             if not self.symbol_dict[self.current_function][tmp_node.value]['init']:
                                 print("变量{}尚未初始化!".format(tmp_node.value))
-                                sys.exit(0)
+                                raise ProgramError("变量{}尚未初始化!".format(tmp_node.value))
+                                
                         parameter_name_list.append(tmp_node.value)
                         parameter_type_list.append(self.symbol_dict[self.current_function][tmp_node.value]['field_type'])
                     else:
                         print(tmp_node.value)
                         print(tmp_node.type)
                         print('parameter type is not supported yet!')
-                        sys.exit(0)
+                        raise ProgramError('parameter type is not supported yet!')
+
                     tmp_node = tmp_node.right
             current_node = current_node.right
         
@@ -1376,7 +1526,9 @@ class Semantic(object):
                 if all(value.get('init') == 0 for value in required_parameter_dict.values()):
                     print("参数数量不一致：required {},but {} was given.".format(
                         num_params, num_args))
-                    sys.exit(0)
+                    raise ProgramError("参数数量不一致：required {},but {} was given.".format(
+                        num_params, num_args))
+                    
                 not_inited_parameter_dict = {
                     k: v['field_type'] for k, v in required_parameter_dict.items() if v['init'] == 0}
                 num_not_inited_parameter = len(not_inited_parameter_dict)
@@ -1387,7 +1539,8 @@ class Semantic(object):
                         # 判断传入的参数和函数未初始化的参数的类型和顺序是否完全一致
                         if not_inited_parameter_type_list != parameter_type_list:
                             print("错误的函数参数，请检查类型和顺序是否一致!")
-                            sys.exit(0)
+                            raise ProgramError("错误的函数参数，请检查类型和顺序是否一致!")
+
                         
                         not_inited_list = [k for k in not_inited_parameter_dict.keys()]
                         for param, var in zip(not_inited_list, parameter_name_list):
@@ -1412,12 +1565,14 @@ class Semantic(object):
                             else:
                                 if required_parameter_dict[k]['init'] != 1:
                                     print("错误的函数定义参数，请检查类型和顺序是否一致!")
-                                    sys.exit(0)
+                                    raise ProgramError("错误的函数定义参数，请检查类型和顺序是否一致!")
+
                                 continue
                         # 有可能有问题：可能需要加个判断条件len(list(parameter_dict.keys())) == cnt
                         if not all(value.get('init') == 1 for value in required_parameter_dict.values()):
-                            print("错误的函数定义参数，请检查类型和顺序是否一致！")
-                            sys.exit(0)
+                            print("错误的函数定义参数，请检查类型和顺序是否一致!")
+                            raise ProgramError("错误的函数定义参数，请检查类型和顺序是否一致!")
+                        
                         self.symbol_dict[func_name] = tmp_symbol_table
                 else:
                     print("参数数量不一致：required {},but {} was given.".format(
@@ -1431,7 +1586,8 @@ class Semantic(object):
                 
                 if required_parameter_type_list != parameter_type_list:
                     print("错误的函数参数，请检查类型和顺序是否一致!")
-                    sys.exit(0)
+                    raise ProgramError("错误的函数参数，请检查类型和顺序是否一致!")
+
                 required_list = [k for k in processed_required_parameter_dict.keys()]  
                 for param, var in zip(required_list, parameter_name_list):
                     if self.is_constant(var):
@@ -1444,8 +1600,9 @@ class Semantic(object):
             else:  # num_args > num_params
                 print("参数数量不一致：required {},but {} was given.".format(
                     num_params, num_args))
-                sys.exit(0)
-        
+                raise ProgramError("参数数量不一致：required {},but {} was given.".format(
+                    num_params, num_args))
+                
             tmp_function = self.current_function
             self.current_function = func_name
             in_node = self.function_statement_node_dict[self.current_function]['in_node']
@@ -1457,8 +1614,6 @@ class Semantic(object):
             self.function_call_flag[self.current_function] = False
             self.current_function = tmp_function
             
-            if out_node:  # 表示如果函数调用之后还有代码
-                self.traverse(out_node)
         # 内置函数
         else:
             parameter_cnt = len(parameter_name_list)
@@ -1466,7 +1621,8 @@ class Semantic(object):
                 arg = None
             elif parameter_cnt > 1:
                 print("参数数量不一致：required 1,but {} was given.".format(parameter_cnt))
-                sys.exit(0)
+                raise ProgramError("参数数量不一致：required 1,but {} was given.".format(parameter_cnt))
+                
             else:
                 arg = parameter_name_list[0]
             if self.inside_function_return_value_dict:
@@ -1487,7 +1643,8 @@ class Semantic(object):
         if arg_type == 'IDENTIFIER':
             if not self.symbol_dict[self.current_function][arg]['init']:
                 print("变量{}尚未初始化!".format(arg))
-                sys.exit(0)
+                raise ProgramError("变量{}尚未初始化!".format(arg))
+                
             arg_type = field_type = self.symbol_dict[self.current_function][arg]['field_type']
             arg = arg_value = self.symbol_dict[self.current_function][arg]['value']
             
@@ -1501,9 +1658,12 @@ class Semantic(object):
                     print('\n',end='')
             else:
                 print(extract_string,end='')
+        elif arg_type == 'bool':
+            print(arg,end='')
         else: # ERROR
             print("不受支持的参数类型 in function 'printf'")
-            sys.exit(0)
+            raise ProgramError("不受支持的参数类型 in function 'printf'")
+
     
     def readInt_function(self,arg=None):
         if arg == None:
@@ -1513,13 +1673,15 @@ class Semantic(object):
             if arg_type == "IDENTIFIER":
                 if not self.symbol_dict[self.current_function][arg]['init']:
                     print("变量{}尚未初始化!".format(arg))
-                    sys.exit(0)
+                    raise ProgramError("变量{}尚未初始化!".format(arg))
+                    
                 arg_type = field_type = self.symbol_dict[self.current_function][arg]['field_type']
                 arg = self.symbol_dict[self.current_function][arg]['value']
                 
             if arg_type == "int" or arg_type == "float":
                 print("错误的参数类型：required string but given {}.".format(arg_type))
-                sys.exit(0)
+                raise ProgramError("错误的参数类型：required string but given {}.".format(arg_type))
+                
             elif arg_type == "string":
                 extract_string = self.extract_string(arg)
                 if '\\n' in extract_string:
@@ -1531,12 +1693,14 @@ class Semantic(object):
                     return_value = input(extract_string)
             else: # ERROR
                 print("不受支持的参数类型 in function 'readInt'!")
-                sys.exit(0)
+                raise ProgramError("不受支持的参数类型 in function 'readInt'!")
+
         try:
             return int(return_value)
         except:
             print("错误的输入类型!请确保输入的是一个整型!")
-            sys.exit(0)
+            raise ProgramError("不受支持的参数类型 in function 'readInt'!")
+
     
     def readFloat_function(self,arg=None):
         if arg == None:
@@ -1546,13 +1710,15 @@ class Semantic(object):
             if arg_type == "IDENTIFIER":
                 if not self.symbol_dict[self.current_function][arg]['init']:
                     print("变量{}尚未初始化!".format(arg))
-                    sys.exit(0)
+                    raise ProgramError("变量{}尚未初始化!".format(arg))
+                    
                 arg_type = field_type = self.symbol_dict[self.current_function][arg]['field_type']
                 arg = self.symbol_dict[self.current_function][arg]['value']
                 
             if arg_type == "int" or arg_type == "float":
                 print("错误的参数类型：required string but given {}.".format(arg_type))
-                sys.exit(0)
+                raise ProgramError("错误的参数类型：required string but given {}.".format(arg_type))
+                
             elif arg_type == "string":
                 extract_string = self.extract_string(arg)
                 if '\\n' in extract_string:
@@ -1564,12 +1730,14 @@ class Semantic(object):
                     return_value = input(extract_string)
             else: # ERROR
                 print("不受支持的参数类型 in function 'readFloat'!")
-                sys.exit(0)
+                raise ProgramError("不受支持的参数类型 in function 'readFloat'!")
+
         try:
             return float(return_value)
         except:
             print("错误的输入类型!请确保输入的是一个浮点型!")
-            sys.exit(0)
+            raise ProgramError("错误的输入类型!请确保输入的是一个浮点型!")
+
     
     def readString_function(self,arg=None):
         if arg == None:
@@ -1579,13 +1747,15 @@ class Semantic(object):
             if arg_type == "IDENTIFIER":
                 if not self.symbol_dict[self.current_function][arg]['init']:
                     print("变量{}尚未初始化!".format(arg))
-                    sys.exit(0)
+                    raise ProgramError("变量{}尚未初始化!".format(arg))
+                    
                 arg_type = field_type = self.symbol_dict[self.current_function][arg]['field_type']
                 arg = self.symbol_dict[self.current_function][arg]['value']
                 
             if arg_type == "int" or arg_type == "float":
                 print("错误的参数类型：required string but given {}.".format(arg_type))
-                sys.exit(0)
+                raise ProgramError("错误的参数类型：required string but given {}.".format(arg_type))
+                
             elif arg_type == "string":
                 extract_string = self.extract_string(arg)
                 if '\\n' in extract_string:
@@ -1597,12 +1767,14 @@ class Semantic(object):
                     return_value = input(extract_string)
             else: # ERROR
                 print("不受支持的参数类型 in function 'readString'!")
-                sys.exit(0)
+                raise ProgramError("不受支持的参数类型 in function 'readString'!")
+                
         try:
             return str(return_value)
         except:
             print("错误的输入类型!请确保输入的是一个字符串型!")
-            sys.exit(0)
+            raise ProgramError( "错误的输入类型!请确保输入的是一个字符串型!")
+            
     
     # 声明语句
     def _statement(self, node=None):
@@ -1648,26 +1820,35 @@ class Semantic(object):
         current_node = node.first_son
         if current_node.type != 'IDENTIFIER':
             print("赋值表达式右侧必须是一个标志符!")
-            sys.exit(0)
+            raise ProgramError("赋值表达式右侧必须是一个标志符!")
+
         if current_node.right.value != 'Expression' and current_node.right.value != 'FunctionCall':
             print("不支持的赋值类型:{}".format(current_node.right.value))
-            sys.exit(0)
+            raise ProgramError("不支持的赋值类型:{}".format(current_node.right.value))
+            
 
         # 首先判断该变量是否已进行过声明
         if current_node.value not in self.symbol_table:
             print("变量{}尚未声明!".format(current_node.value))
-            sys.exit(0)
+            raise ProgramError("变量{}尚未声明!".format(current_node.value))
+            
 
+        # 如果右子树是常量表达式
         if current_node.right.value == 'Expression':
             expres = self._expression(current_node.right)
+            # 首先判断该变量是否已进行过声明
+            if current_node.value not in self.symbol_table:
+                print("变量{}未声明!".format(current_node.value))
+                raise ProgramError("变量{}未声明!".format(current_node.value))
+                
             # 该变量的类型
             field_type = self.symbol_table[current_node.value]['field_type']
             # 继续判断：赋值号左右两边类型是否一致？
             field_constant_type = self.judge_constant_type(field_type)
-            if expres['type'] == 'DIGIT_CONSTANT' or expres['type'] == 'STRING_CONSTANT':
+            if expres['type'] == 'DIGIT_CONSTANT' or expres['type'] == 'STRING_CONSTANT' or expres['type'] == 'BOOL_CONSTANT':
                 if field_constant_type != expres['type']:
-                    print("错误的赋值类型:{}!".format(expres['type']))
-                    sys.exit(0)
+                    raise ProgramError("错误的赋值类型:{}!".format(expres['type']))
+                    
                 # 判断完成后，进行解释执行操作：
                 if field_type == 'int':
                     # 通过四舍五入规则将右边强制转换为int并赋值
@@ -1677,61 +1858,117 @@ class Semantic(object):
                     self.symbol_table[current_node.value]['value'] = float(expres['value'])
                 elif field_type == 'string':
                     self.symbol_table[current_node.value]['value'] = expres['value']
+                elif field_type == 'bool':
+                    if expres['value'] == 'True':
+                        self.symbol_table[current_node.value]['value'] = True
+                    elif expres['value'] == 'False':
+                        self.symbol_table[current_node.value]['value'] = False
+                        
+                flag = 1
+                self.symbol_table[current_node.value]['init'] = flag
             # 如果是变量赋值
             elif expres['type'] == 'VARIABLE':
                 var = expres['value']
-                # 如果该变量没有初始化
-                if self.symbol_table[var]['init'] == 0:
-                    raise ValueError("变量{}未声明!".format(current_node.value))
-                else:
-                    var_field_type = self.symbol_table[var]['field_type']
-                    var_constant_type = self.judge_constant_type(
-                        var_field_type)
-                    # 如果变量值的常数类型不一致
+                var_field_type = self.symbol_table[var]['field_type']
+                var_constant_type = self.judge_constant_type(var_field_type)
+                # 如果是函数体定义的变量
+                if self.symbol_table[var]['type'] == 'VARIABLE':
+                    if self.symbol_table[var]['init'] == 0:
+                        raise ProgramError("变量{}未初始化，无法赋值!".format(var))
+                        
+                    else:
+                        # 如果变量值的常数类型不一致
+                        if field_constant_type != var_constant_type:
+                            print("变量{}和{}值类型不一致，无法赋值！".format(
+                                current_node.value, var))
+                            raise ProgramError("变量{}和{}值类型不一致，无法赋值！".format(
+                                current_node.value, var))
+                            
+                        # 同理
+                        if field_type == 'int':
+                            self.symbol_table[current_node.value]['value'] = round(float(self.symbol_table[expres['value']]['value']))
+                        elif field_type == 'float':
+                            self.symbol_table[current_node.value]['value'] = float(self.symbol_table[expres['value']]['value'])
+                        elif field_type == 'string':
+                            self.symbol_table[current_node.value]['value'] = self.symbol_table[expres['value']]['value']
+                        elif field_type == 'bool':
+                            if expres['value'] == 'True':
+                                self.symbol_table[current_node.value]['value'] = True
+                            elif expres['value'] == 'False':
+                                self.symbol_table[current_node.value]['value'] = False
+                                
+                        flag = 1
+                        self.symbol_table[current_node.value]['init'] = flag
+                # 如果是函数头定义的参数
+                elif self.symbol_table[var]['type'] == 'PARAMETER':
                     if field_constant_type != var_constant_type:
-                        print("变量类型不一致，无法赋值!")
-                        sys.exit(0)
-                    # 同理
-                    if field_type == 'int':
-                        self.symbol_table[current_node.value]['value'] = round(float(self.symbol_table[expres['value']]['value']))
-                    elif field_type == 'float':
-                        self.symbol_table[current_node.value]['value'] = float(self.symbol_table[expres['value']]['value'])
-                    elif field_type == 'string':
-                        self.symbol_table[current_node.value]['value'] = self.symbol_table[expres['value']]['value']
+                        print("变量{}和{}值类型不一致，无法赋值！".format(
+                            current_node.value, var))
+                        raise ProgramError("变量{}和{}值类型不一致，无法赋值！".format(
+                            current_node.value, var))
+                        
+                    # 如果有未初始化的参数，说明函数尚未被调用，赋值操作直接略过
+                    if self.symbol_table[var]['init'] == 0:
+                        pass
+                    else:
+                        if field_type == 'int':
+                            self.symbol_table[current_node.value]['value'] = round(float(self.symbol_table[expres['value']]['value']))
+                        elif field_type == 'float':
+                            self.symbol_table[current_node.value]['value'] = float(self.symbol_table[expres['value']]['value'])
+                        elif field_type == 'string':
+                            self.symbol_table[current_node.value]['value'] = self.symbol_table[expres['value']]['value']
+                        elif field_type == 'bool':
+                            if expres['value'] == 'True':
+                                self.symbol_table[current_node.value]['value'] = True
+                            elif expres['value'] == 'False':
+                                self.symbol_table[current_node.value]['value'] = False
+                        flag = 1
+                        self.symbol_table[current_node.value]['init'] = flag
+                self.symbol_dict[self.current_function] = self.symbol_table
+                
             else:
                 print("不支持的赋值类型:{}".format(expres['type']))
-                sys.exit(0)
-            self.symbol_dict[self.current_function] = self.symbol_table
+                raise ProgramError("不支持的赋值类型:{}".format(expres['type']))
+                
+            
         # 如果右子树是函数调用
-        else: 
+        else:
             tmp_symbol_table = self.symbol_table
             self._function_call(current_node.right)
             self.symbol_table = tmp_symbol_table
             func_name = current_node.right.first_son.value
-            
             if func_name not in inside_function:
                 # 如果有返回值
                 return_value = self.function_return_value_dict[func_name]
-                var_field_type = self.symbol_dict[self.current_function][current_node.value]['field_type'] # field_type
+                var_field_type = current_node.father.left.first_son.first_son.value # field_type
                 if return_value != None:
                     return_value_type = self.judge_constant_value_type(return_value)
                     var_value_type = self.judge_constant_type(var_field_type)
                     if return_value_type != var_value_type:
                         print("变量 {} 的常数类型: {} 和函数 {} 的返回值常数类型 {} 不一致!".format(current_node.value,var_value_type,func_name,return_value_type))
-                        sys.exit(0)
+                        raise ProgramError("变量 {} 的常数类型: {} 和函数 {} 的返回值常数类型 {} 不一致!".format(current_node.value,var_value_type,func_name,return_value_type))
+                        
                     if var_field_type == 'int':
                         self.symbol_table[current_node.value]['value'] = round(float(return_value))
                     elif var_field_type == 'float':
                         self.symbol_table[current_node.value]['value'] = float(return_value)
                     elif var_field_type == 'string':
                         self.symbol_table[current_node.value]['value'] = return_value
+                    elif var_field_type == 'bool':
+                        if return_value == 'True':
+                            self.symbol_table[current_node.value]['value'] = True
+                        elif return_value == 'False':
+                            self.symbol_table[current_node.value]['value'] = False
+                    
                     flag = 1
     
                     self.symbol_table[current_node.value]['init'] = flag
                     self.symbol_dict[self.current_function] = self.symbol_table
+    
                 else:
-                    print("无返回值的函数无法用于赋值!函数名:{}".format(self.current_function))
-                    sys.exit(0)
+                    print("无返回值的函数无法用于变量初始化!函数名:{}".format(self.current_function))
+                    raise ProgramError("无返回值的函数无法用于变量初始化!函数名:{}".format(self.current_function))
+                    
             else:
                 return_value = list(self.inside_function_return_value_dict.keys())[0]
                 return_type = self.judge_constant_type(self.inside_function_return_value_dict[return_value])
@@ -1740,7 +1977,8 @@ class Semantic(object):
                 
                 if return_type != var_type:
                     print("变量 {} 的常数类型: {} 和函数 {} 的返回值常数类型 {} 不一致!".format(current_node.value,var_type,func_name,return_type))
-                    sys.exit(0)
+                    raise ProgramError("变量 {} 的常数类型: {} 和函数 {} 的返回值常数类型 {} 不一致!".format(current_node.value,var_type,func_name,return_type))
+                    
                     
                 if var_field_type == 'int':
                     self.symbol_table[current_node.value]['value'] = round(float(return_value))
@@ -1748,7 +1986,12 @@ class Semantic(object):
                     self.symbol_table[current_node.value]['value'] = float(return_value)
                 elif var_field_type == 'string':
                     self.symbol_table[current_node.value]['value'] = return_value
-                
+                elif var_field_type == 'bool':
+                    if return_value == 'True':
+                        self.symbol_table[current_node.value]['value'] = True
+                    elif return_value == 'bool':
+                        self.symbol_table[current_node.value]['value'] = False
+                        
                 flag = 1
                 self.symbol_table[current_node.value]['init'] = flag
                 self.symbol_dict[self.current_function] = self.symbol_table
@@ -1780,7 +2023,8 @@ class Semantic(object):
                 variable_type = current_node.extra_info['type']
                 if variable_name in [param for param,value in self.symbol_dict[self.current_function].items() if value.get('type') == 'PARAMETER']:
                     print("暂不支持在函数内声明与函数参数同名的变量：{} {}".format(variable_field_type,variable_name))
-                    sys.exit(0)
+                    raise ProgramError("暂不支持在函数内声明与函数参数同名的变量：{} {}".format(variable_field_type,variable_name))
+                    
             # 数组元素
             elif current_node.value == 'ConstantList':
                 tmp_node = current_node.first_son
@@ -1790,7 +2034,7 @@ class Semantic(object):
                     array.append(tmp_node.value)
                     tmp_node = tmp_node.right
             current_node = current_node.first_son
-
+        
         self.symbol_table = self.symbol_dict[self.current_function]
         # 将该变量存入符号表
         self.symbol_table[variable_name] = {
@@ -1800,22 +2044,24 @@ class Semantic(object):
         current_node = node.first_son.right.first_son
         if current_node.right.value != 'Expression' and current_node.right.value != 'FunctionCall':
             print("assignment wrong in variable initialzation.")
-            sys.exit(0)
+            raise ProgramError("变量初始化中的赋值错误!")
+
         # 如果右子树是常量表达式
         if current_node.right.value == 'Expression':
             expres = self._expression(current_node.right)
             # 首先判断该变量是否已进行过声明
             if current_node.value not in self.symbol_table:
                 print("变量{}未声明!".format(current_node.value))
-                sys.exit(0)
+                raise ProgramError("变量{}未声明!".format(current_node.value))
+                
             # 该变量的类型
             field_type = self.symbol_table[current_node.value]['field_type']
             # 继续判断：赋值号左右两边类型是否一致？
             field_constant_type = self.judge_constant_type(field_type)
-            if expres['type'] == 'DIGIT_CONSTANT' or expres['type'] == 'STRING_CONSTANT':
+            if expres['type'] == 'DIGIT_CONSTANT' or expres['type'] == 'STRING_CONSTANT' or expres['type'] == 'BOOL_CONSTANT':
                 if field_constant_type != expres['type']:
-                    print("错误的赋值类型:{}!".format(expres['type']))
-                    sys.exit(0)
+                    raise ProgramError("错误的赋值类型:{}!".format(expres['type']))
+                    
                 # 判断完成后，进行解释执行操作：
                 if field_type == 'int':
                     # 通过四舍五入规则将右边强制转换为int并赋值
@@ -1825,6 +2071,9 @@ class Semantic(object):
                     self.symbol_table[current_node.value]['value'] = float(expres['value'])
                 elif field_type == 'string':
                     self.symbol_table[current_node.value]['value'] = expres['value']
+                elif field_type == 'bool':
+                    self.symbol_table[current_node.value]['value'] = expres['value']
+                        
                 flag = 1
                 self.symbol_table[current_node.value]['init'] = flag
             # 如果是变量赋值
@@ -1835,13 +2084,16 @@ class Semantic(object):
                 # 如果是函数体定义的变量
                 if self.symbol_table[var]['type'] == 'VARIABLE':
                     if self.symbol_table[var]['init'] == 0:
-                        raise ValueError("变量{}未初始化，无法赋值!".format(var))
+                        raise ProgramError("变量{}未初始化，无法赋值!".format(var))
+                        
                     else:
                         # 如果变量值的常数类型不一致
                         if field_constant_type != var_constant_type:
                             print("变量{}和{}值类型不一致，无法赋值！".format(
                                 current_node.value, var))
-                            sys.exit(0)
+                            raise ProgramError("变量{}和{}值类型不一致，无法赋值！".format(
+                                current_node.value, var))
+                            
                         # 同理
                         if field_type == 'int':
                             self.symbol_table[current_node.value]['value'] = round(float(self.symbol_table[expres['value']]['value']))
@@ -1849,6 +2101,9 @@ class Semantic(object):
                             self.symbol_table[current_node.value]['value'] = float(self.symbol_table[expres['value']]['value'])
                         elif field_type == 'string':
                             self.symbol_table[current_node.value]['value'] = self.symbol_table[expres['value']]['value']
+                        elif field_type == 'bool':
+                            self.symbol_table[current_node.value]['value'] = expres['value']
+                                
                         flag = 1
                         self.symbol_table[current_node.value]['init'] = flag
                 # 如果是函数头定义的参数
@@ -1856,7 +2111,9 @@ class Semantic(object):
                     if field_constant_type != var_constant_type:
                         print("变量{}和{}值类型不一致，无法赋值！".format(
                             current_node.value, var))
-                        sys.exit(0)
+                        raise ProgramError("变量{}和{}值类型不一致，无法赋值！".format(
+                            current_node.value, var))
+                        
                     # 如果有未初始化的参数，说明函数尚未被调用，赋值操作直接略过
                     if self.symbol_table[var]['init'] == 0:
                         pass
@@ -1867,13 +2124,16 @@ class Semantic(object):
                             self.symbol_table[current_node.value]['value'] = float(self.symbol_table[expres['value']]['value'])
                         elif field_type == 'string':
                             self.symbol_table[current_node.value]['value'] = self.symbol_table[expres['value']]['value']
+                        elif field_type == 'bool':
+                            self.symbol_table[current_node.value]['value'] = expres['value']
                         flag = 1
                         self.symbol_table[current_node.value]['init'] = flag
                 self.symbol_dict[self.current_function] = self.symbol_table
                 
             else:
                 print("不支持的赋值类型:{}".format(expres['type']))
-                sys.exit(0)
+                raise ProgramError("不支持的赋值类型:{}".format(expres['type']))
+                
             
         # 如果右子树是函数调用
         else:
@@ -1888,15 +2148,20 @@ class Semantic(object):
                 if return_value != None:
                     return_value_type = self.judge_constant_value_type(return_value)
                     var_value_type = self.judge_constant_type(var_field_type)
+                    
                     if return_value_type != var_value_type:
                         print("变量 {} 的常数类型: {} 和函数 {} 的返回值常数类型 {} 不一致!".format(current_node.value,var_value_type,func_name,return_value_type))
-                        sys.exit(0)
+                        raise ProgramError("变量 {} 的常数类型: {} 和函数 {} 的返回值常数类型 {} 不一致!".format(current_node.value,var_value_type,func_name,return_value_type))
+                        
                     if var_field_type == 'int':
                         self.symbol_table[current_node.value]['value'] = round(float(return_value))
                     elif var_field_type == 'float':
                         self.symbol_table[current_node.value]['value'] = float(return_value)
                     elif var_field_type == 'string':
                         self.symbol_table[current_node.value]['value'] = return_value
+                    elif var_field_type == 'bool':
+                        self.symbol_table[current_node.value]['value'] = return_value
+                    
                     flag = 1
     
                     self.symbol_table[current_node.value]['init'] = flag
@@ -1904,7 +2169,8 @@ class Semantic(object):
     
                 else:
                     print("无返回值的函数无法用于变量初始化!函数名:{}".format(self.current_function))
-                    sys.exit(0)
+                    raise ProgramError("无返回值的函数无法用于变量初始化!函数名:{}".format(self.current_function))
+                    
             else:
                 return_value = list(self.inside_function_return_value_dict.keys())[0]
                 return_type = self.judge_constant_type(self.inside_function_return_value_dict[return_value])
@@ -1913,7 +2179,8 @@ class Semantic(object):
                 
                 if return_type != var_type:
                     print("变量 {} 的常数类型: {} 和函数 {} 的返回值常数类型 {} 不一致!".format(current_node.value,var_type,func_name,return_type))
-                    sys.exit(0)
+                    raise ProgramError("变量 {} 的常数类型: {} 和函数 {} 的返回值常数类型 {} 不一致!".format(current_node.value,var_type,func_name,return_type))
+                    
                     
                 if var_field_type == 'int':
                     self.symbol_table[current_node.value]['value'] = round(float(return_value))
@@ -1921,7 +2188,9 @@ class Semantic(object):
                     self.symbol_table[current_node.value]['value'] = float(return_value)
                 elif var_field_type == 'string':
                     self.symbol_table[current_node.value]['value'] = return_value
-                
+                elif var_field_type == 'bool':
+                    self.symbol_table[current_node.value]['value'] = return_value
+
                 flag = 1
                 self.symbol_table[current_node.value]['init'] = flag
                 self.symbol_dict[self.current_function] = self.symbol_table
@@ -1934,7 +2203,7 @@ class Semantic(object):
         current_node = node.first_son
         # 遍历的是for循环中的那个部分
         cnt = 2
-        circle_node = None
+        loop_node = None
         while current_node:
             # for第一部分
             if current_node.value == 'Assignment':
@@ -1957,10 +2226,13 @@ class Semantic(object):
                     continue
             # for语句部分
             elif current_node.value == 'Sentence':
-                if not circle_node:
-                    circle_node = current_node.left
+                if not loop_node:
+                    loop_node = current_node.left
                 self.traverse(current_node.first_son)
-                current_node = circle_node
+                # 若已break
+                if current_node.extra_info == 'break':
+                    break
+                current_node = loop_node
                 continue
             current_node = current_node.right
 
@@ -1975,7 +2247,8 @@ class Semantic(object):
             if current_node.value == 'IfControl':
                 if current_node.first_son.value != 'Expression' and current_node.first_son.right.value != 'Sentence':
                     print("if语句错误!")
-                    sys.exit(0)   
+                    raise ProgramError("if语句错误!")
+   
                 result = self._calculate_expression(current_node.first_son)
                 if result:
                     executed_flag = True
@@ -1984,7 +2257,8 @@ class Semantic(object):
             elif current_node.value == 'ElifControl':
                 if current_node.first_son.value != 'Expression' and current_node.first_son.right.value != 'Sentence':
                     print("elif语句错误!")
-                    sys.exit(0)   
+                    raise ProgramError("elif语句错误!")
+   
                 result = self._calculate_expression(current_node.first_son)
                 if result:
                     executed_flag = True
@@ -2001,17 +2275,23 @@ class Semantic(object):
             if self.current_function not in self.function_call_flag or not self.function_call_flag[self.current_function]:
                 return
         current_node = node.first_son
-        circle_node = None
+        loop_node = None
         while current_node:
             if current_node.value == 'Expression':
                 result = self._calculate_expression(current_node)
                 if not result:
                     break
             elif current_node.value == 'Sentence':
-                if not circle_node:
-                    circle_node = current_node.left
+                if not loop_node:
+                    loop_node = current_node.left
                 self.traverse(current_node.first_son)
-                current_node = circle_node
+                if current_node.extra_info == 'break':
+                    self.loop_finish_flag = False
+                    break
+                elif current_node.extra_info == 'continue':
+                    self.loop_finish_flag = False
+                    
+                current_node = loop_node
                 continue
             current_node = current_node.right
 
@@ -2021,21 +2301,70 @@ class Semantic(object):
             if self.current_function not in self.function_call_flag or not self.function_call_flag[self.current_function]:
                 return
         current_node = node.first_son
+        if not current_node or not current_node.right:
+            print('return error!')
+            raise ProgramError("return语句错误!")
+
         if current_node.value != 'return' or current_node.right.value != 'Expression':
             print('return error!')
-            sys.exit(0) 
+            raise ProgramError("return语句错误!")
+ 
         else:
             current_node = current_node.right
             expres = self._expression(current_node)
             if expres['type'] == 'VARIABLE':
-                if self.symbol_dict[self.current_function][expres['value']]['init'] == 1:
+                if expres['type'] in self.symbol_dict and self.symbol_dict[self.current_function][expres['value']]['init'] == 1:
                     self.function_return_value_dict[self.current_function] = self.symbol_dict[self.current_function][expres['value']]['value']
+                else:
+                    raise ProgramError("返回变量{}不存在，或尚未初始化!".format(expres['value']))
             elif expres['type'] == 'DIGIT_CONSTANT' or expres['type'] == 'STRING_CONSTANT':
                 self.function_return_value_dict[self.current_function] = str(expres['value'])
+            elif expres['type'] == 'BOOL_CONSTANT':
+                self.function_return_value_dict[self.current_function] = expres['value']
             else:
                 print('return type not supported!')
-                sys.exit(0)
+                raise ProgramError("return类型不支持!")
 
+    # break语句
+    def _break(self,node=None):
+        sentence_node = node.father
+        
+        # 说明这是在ifelse语句里的break
+        if sentence_node.father.type != 'ForControl' and sentence_node.father.type != 'WhileControl':
+            current_node = sentence_node.father
+            # 找到break所属的循环体节点
+            while current_node:
+                if current_node.type != 'ForControl' and current_node.type != 'WhileControl':
+                    current_node = current_node.father
+                else:
+                    break
+            sentence_node = current_node.first_son
+            while sentence_node.value != 'Sentence':
+                sentence_node = sentence_node.right
+        
+        sentence_node.extra_info = "break"
+        self.loop_finish_flag = True
+                
+    # continue语句
+    def _continue(self,node=None):
+        sentence_node = node.father
+        # 说明这是在ifelse语句里的continue
+        if sentence_node.father.type != 'ForControl' and sentence_node.father.type != 'WhileControl':
+            current_node = sentence_node.father
+            # 找到break所属的循环体节点
+            while current_node:
+                if current_node.type != 'ForControl' and current_node.type != 'WhileControl':
+                    current_node = current_node.father
+                else:
+                    break
+            sentence_node = current_node.first_son
+            while sentence_node.value != 'Sentence':
+                sentence_node = sentence_node.right
+                
+        
+        sentence_node.extra_info = "continue"
+        self.loop_finish_flag = True
+        
     # TODO:增加识别操作符和操作数层级以还原逆波兰表达式的功能
     def _traverse_expression(self, node=None,depth = 0):
         if not node:
@@ -2068,6 +2397,12 @@ class Semantic(object):
             # 如果是字符串常量
             elif node.first_son.type == 'STRING_CONSTANT':
                 return {'type': 'STRING_CONSTANT', 'value': node.first_son.value}
+            elif node.first_son.type == 'BOOL_CONSTANT':
+                if node.first_son.value == 'True':
+                    return {'type': 'BOOL_CONSTANT','value':True}
+                else:
+                    return {'type': 'BOOL_CONSTANT','value':False}
+            
         elif node.type == 'Variable':
             return {'type':'VARIABLE','value':node.first_son.value}
         
@@ -2079,7 +2414,7 @@ class Semantic(object):
             reverse_polishexpression_statement = [tree.current for tree in node.extra_info]
             # 如果是赋值语句，则symbol_dict的更新交给赋值函数
             if node.left.father.value == 'Assignment':
-                result = self._traverse_statement_calculate(reverse_polishexpression_statement)     
+                result = self._traverse_statement_calculate(reverse_polishexpression_statement)
                 field_type = self.judge_type(result)
                 constant_type = self.judge_constant_type(field_type)
                 return_value = {'type': constant_type, 'value': result}
@@ -2099,10 +2434,12 @@ class Semantic(object):
             if item_type == '_Variable':
                 if item_value not in self.symbol_dict[self.current_function]:
                     print("变量{}未声明!".format(item_value))
-                    sys.exit(0)
+                    raise ProgramError("变量{}未声明!".format(item_value))
+                    
                 if self.symbol_dict[self.current_function][item_value]['init'] == 0:
                     print("变量{}未初始化!".format(item_value))
-                    sys.exit(0)
+                    raise ProgramError("变量{}未初始化!".format(item_value))
+                    
                 stack.append(self.symbol_dict[self.current_function][item_value]['value'])
                 name_stack.append(item_value)
                 type_stack.append('Var')
@@ -2113,6 +2450,15 @@ class Semantic(object):
                     stack.append(int(item_value))
                 type_stack.append('Cons')
                 name_stack.append(None)
+            
+            elif item_type == 'BOOL_CONSTANT':
+                if item_value == 'True':
+                    stack.append(True)
+                else:
+                    stack.append(False)
+                type_stack.append('BOOL')
+                name_stack.append(None)
+                
             elif item_type == '_Operator':
                 # 单目运算符
                 if item_value in child_operators[0]:
@@ -2176,13 +2522,15 @@ class Semantic(object):
                             self.symbol_dict[self.current_function][left_name]['value'] = result
                         else:
                             print("赋值左值必须为变量!")
-                            sys.exit(0)
+                            raise ProgramError("赋值左值必须为变量!")
+
                     stack.append(result)
                     type_stack.append('Cons')
                     name_stack.append(None)
                 else:
                     print("operator {} not supported!".format(item_value))
-                    sys.exit(0)
+                    raise ProgramError("operator {} not supported!".format(item_value))
+                    
         return result
     
     # 表达式值返回-->用于Contorl语句
@@ -2211,16 +2559,25 @@ class Semantic(object):
             if item_type == '_Variable':
                 if item_value not in self.symbol_dict[self.current_function]:
                     print("变量{}未声明!".format(item_value))
-                    sys.exit(0)
+                    raise ProgramError("变量{}未声明!".format(item_value))
+                    
                 if self.symbol_dict[self.current_function][item_value]['init'] == 0:
                     print("变量{}未初始化!".format(item_value))
-                    sys.exit(0)
+                    raise ProgramError("变量{}未初始化!".format(item_value))
+                    
                 stack.append(self.symbol_dict[self.current_function][item_value]['value'])
             elif item_type == '_Constant':
                 if '.' in item_value:
                     stack.append(float(item_value))
                 else:
                     stack.append(int(item_value))
+                    
+            elif item_type == 'BOOL_CONSTANT':
+                if item_value == 'True':
+                    stack.append(True)
+                else:
+                    stack.append(False)
+
             elif item_type == '_Operator':
                 # 单目运算符
                 if item_value in child_operators[0]:
@@ -2271,7 +2628,8 @@ class Semantic(object):
                     stack.append(result)
                 else:
                     print("operator {} not supported!".format(item_value))
-                    sys.exit(0)
+                    raise ProgramError("operator {} not supported!".format(item_value))
+                    
         return result
     
     # 处理某一种句型
@@ -2283,15 +2641,30 @@ class Semantic(object):
             # 如果是根节点
             if node.value == 'Sentence':
                 self.traverse(node.first_son)
-            # 函数声明
-            elif node.value == 'FunctionStatement':
-                self._function_statement(node)
             # 声明语句
             elif node.value == 'Statement':
                 self._statement(node)
+            
+            # 函数声明，略过继续执行
+            elif node.value == 'FunctionStatement':
+                current_node = node.first_son
+                while current_node:
+                    if current_node.value == 'FunctionName':
+                        self.current_function = current_node.first_son.value
+                    if current_node.value == 'Sentence':
+                        break
+                    current_node = current_node.right
+                self.traverse(current_node.first_son)
+
             # 函数调用
             elif node.value == 'FunctionCall':
                 func_name = node.first_son.value
+                
+                # 如果函数尚未声明且非内置函数
+                if func_name not in self.symbol_dict:
+                    if func_name not in inside_function:
+                        raise ProgramError("函数{}尚未定义，无法调用!".format(func_name))
+                              
                 if node.right and func_name not in inside_function:
                     self.function_statement_node_dict[func_name]['out_node'] = node.right
                 self._function_call(node)
@@ -2311,7 +2684,13 @@ class Semantic(object):
                     self._control_while(node)
                 else:
                     print('control type not supported!')
-                    exit()
+                    raise ProgramError('control type not supported!')
+            # break语句
+            elif node.value == 'BREAK':
+                self._break(node)
+            # continue语句
+            elif node.value == 'CONTINUE':
+                self._continue(node)
             # 表达式语句
             elif node.value == 'Expression':
                 self._expression(node)
@@ -2319,16 +2698,24 @@ class Semantic(object):
             elif node.value == 'Return':
                 self._return(node)
             else:
-                print('sentenct type not supported yet！')
-                sys.exit(0)
+                print('sentence type not supported yet！')
+                raise ProgramError('sentence type not supported yet！')
+
     # 遍历节点
     def traverse(self, node=None):
         self._handler_block(node)
-        next_node = node.right
+        # break和continue语句
+        if self.loop_finish_flag:
+            next_node = None
+        # 其他正常句型
+        else:
+            next_node = node.right
         while next_node:
             self._handler_block(next_node)
-            next_node = next_node.right
-
+            if self.loop_finish_flag:
+                next_node = None
+            else:
+                next_node = next_node.right
 
 Lex = Lexer("testc.txt")
 tokens = Lex.run()
@@ -2340,4 +2727,4 @@ ast = Par.tree.root
 Par.display(ast)
 
 Sem = Semantic(ast)
-Sem.traverse(ast)
+Sem.traverse(Sem.main_node)
