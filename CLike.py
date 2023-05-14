@@ -1,4 +1,5 @@
 import copy
+import pdb
 # token分类
 TOKEN_STYLE = [
     'KEY_WORD', 'IDENTIFIER', 'DIGIT_CONSTANT',
@@ -87,6 +88,14 @@ class ProgramError(Exception):
     def __str__(self):
         return self.errorinfo
 
+# 解释器异常
+class InterpreterError(Exception):
+    def __init__(self,ErrorInfo):
+        super().__init__(self)
+        self.errorinfo = ErrorInfo
+    def __str__(self):
+        return self.errorinfo
+
 class Token:
     def __init__(self, token_type, token_value, line_num):
         self.type = token_type
@@ -98,10 +107,8 @@ class Token:
 
 # 定义一个词法分析器类
 class Lexer:
-    def __init__(self, file_name):
+    def __init__(self):
         global content
-        with open(file_name, 'r') as f:
-            content = f.read()
         self.tokens = []
 
     # 获取下一个字符
@@ -201,6 +208,17 @@ class Lexer:
                 token_value += content[0]
                 token_type = DETAIL_TOKEN_STYLE[token_value]
                 self.move_pointer(1)
+            # # 如果是负数
+            # elif token_value == '-' and content[0].isdigit():
+            #     token_value += content[0]
+            #     token_type = TOKEN_STYLE[2]
+            #     self.move_pointer(1)
+            # # 如果是负变量
+            # elif token_value == '-' and content[0].isalpha() or content[0] == '_':
+            #     while content[0].isalnum() or content[0] == '_':
+            #         token_value += content[0]
+            #         self.move_pointer(1)
+            #     token_type = TOKEN_STYLE[1]
             else:
                 token_type = DETAIL_TOKEN_STYLE[token_value]
 
@@ -215,7 +233,6 @@ class Lexer:
                         token_value += content[0]
                         self.move_pointer(1)
                 except:
-                    print("无法找到右引号，请检查字符串定义是否正确 in line {}!".format(line_num))
                     raise ProgramError("无法找到右引号，请检查字符串定义是否正确 in line {}!".format(line_num))
                     
                 token_value += content[0]
@@ -352,9 +369,6 @@ class Parser(object):
     '''语法分析器'''
     def __init__(self, tokens):
         self.tokens = tokens
-        if not tokens:
-            print("build successfully!")
-            
         # tokens下标
         self.index = 0
         # 最终生成的语法树
@@ -401,9 +415,8 @@ class Parser(object):
                 break
             else:
                 print('遇到了错误的句型 in line {}!'.format(self.tokens[self.index].line))
-                raise ProgramError('遇到了错误的句型 in line {}!').format(self.tokens[self.index].line)
+                raise ProgramError('遇到了错误的句型 in line {}!'.format(self.tokens[self.index].line))
                 
-
     # 函数声明
     def function_statment(self, father=None):
         if not father:
@@ -428,9 +441,9 @@ class Parser(object):
                 self.index += 1
             # 如果是函数名
             elif self.tokens[self.index].type == 'IDENTIFIER':
-                func_name = SyntaxTreeNode('FunctionName')
+                func_name = self.tokens[self.index].value
                 func_statement_tree.add_child_node(
-                    func_name, func_statement_tree.root)
+                    SyntaxTreeNode('FunctionName'), func_statement_tree.root)
                 # extra_info
                 func_statement_tree.add_child_node(
                     SyntaxTreeNode(self.tokens[self.index].value, 'IDENTIFIER', {'type': 'FUNCTION_NAME'}))
@@ -449,7 +462,6 @@ class Parser(object):
                         func_statement_tree.add_child_node(
                             SyntaxTreeNode(self.tokens[self.index].value, 'FIELD_TYPE', {'type': self.tokens[self.index].value}), param)
                         if self.tokens[self.index + 1].type == 'IDENTIFIER':
-                            # if self.tokens[self.index+2].type == 'ASSIGN' and self.tokens[self.index+]
                             # extra_info
                             func_statement_tree.add_child_node(SyntaxTreeNode(self.tokens[self.index + 1].value, 'IDENTIFIER', {
                                                                'type': 'VARIABLE', 'variable_type': self.tokens[self.index].value}), param)
@@ -471,7 +483,7 @@ class Parser(object):
                                         SyntaxTreeNode(self.tokens[self.index+3].value, 'STRING_CONSTANT'), param)
                                 elif self.tokens[self.index].value == 'int' or self.tokens[self.index].value == 'float':
                                     func_statement_tree.add_child_node(
-                                        SyntaxTreeNode(self.tokens[self.index+3].value, '_Constant'), param)
+                                        SyntaxTreeNode(self.tokens[self.index+3].value, 'DIGIT_CONSTANT'), param)
                                 elif self.tokens[self.index].value == 'bool':
                                     func_statement_tree.add_child_node(
                                         SyntaxTreeNode(self.tokens[self.index+3].value, 'BOOL_CONSTANT'), param)
@@ -479,15 +491,15 @@ class Parser(object):
                                 continue
                             else:
                                 print("函数定义参数错误！参数之间须以分割符逗号进行分割！")
-                                raise ProgramError("函数定义参数错误！参数之间须以分割符逗号进行分割 in line {}!".format(self.tokens[self.index].line))
+                                raise ProgramError("函数{}定义参数错误：参数之间须以分割符逗号进行分割 in line {}!".format(func_name,self.tokens[self.index].line))
                                 
                         else:
-                            print('函数定义参数错误!')
-                            raise ProgramError("函数定义参数错误 in line {}!".format(self.tokens[self.index].line))
-                            
+                            raise ProgramError("函数{}定义参数错误：只有变量才可作为参数 in line {}!".format(func_name,self.tokens[self.index].line))
                         self.index += 1
+                    elif self.tokens[self.index].type == 'IDENTIFIER':
+                        raise ProgramError("函数{}定义参数错误：参数需以关键词限定类型 in line {}!".format(func_name,self.tokens[self.index].line))
                     self.index += 1
-                self.index += 1
+                self.index += 1 
             # 如果是遇见了左大括号
             elif self.tokens[self.index].type == 'LB_BRACKET':
                 self.process_bracket(func_statement_tree)
@@ -537,59 +549,15 @@ class Parser(object):
         self.index -= 1  # 声明部分进行完之后，当前index从赋值号开始，因此减去1回到变量名部分。
         while self.tokens[self.index].type != 'SEMICOLON':
             # 被赋值的变量
-            if self.tokens[self.index].type == 'IDENTIFIER':
+            if self.tokens[self.index].type == 'IDENTIFIER':      
                 assign_tree.add_child_node(
                     SyntaxTreeNode(self.tokens[self.index].value, 'IDENTIFIER'))
                 self.index += 1
+
             elif self.tokens[self.index].type == 'ASSIGN':
                 self.index += 1
-                # 如果不是调用函数
-                if self.tokens[self.index+1].type != 'LL_BRACKET':
-                    self.expression_statement(assign_tree.root)
-                else:
-                    break
+                self.expression_statement(assign_tree.root)
         self.index += 1
-
-        # 函数调用部分
-        if self.tokens[self.index].type == 'LL_BRACKET':
-            func_call_father = assign_tree.root
-            func_call_tree = SyntaxTree()
-            func_call_tree.current = func_call_tree.root = SyntaxTreeNode(
-                'FunctionCall')
-            assign_tree.add_child_node(func_call_tree.root, func_call_father)
-            self.index -= 1  # 当前index从函数名开始
-            while self.tokens[self.index].type != 'SEMICOLON':
-                # 函数名
-                if self.tokens[self.index].type == 'IDENTIFIER':
-                    func_call_tree.add_child_node(
-                        SyntaxTreeNode(self.tokens[self.index].value, 'FUNCTION_NAME'))
-                    func_name = self.tokens[self.index].value
-                    line = self.tokens[self.index].line
-                # 左小括号
-                elif self.tokens[self.index].type == 'LL_BRACKET':
-                    self.index += 1
-                    params_list = SyntaxTreeNode('CallParameterList')
-                    func_call_tree.add_child_node(
-                        params_list, func_call_tree.root)
-                    try:
-                        while self.tokens[self.index].type != 'RL_BRACKET':
-                            if self.tokens[self.index].type == 'IDENTIFIER' or self.tokens[self.index].type == 'DIGIT_CONSTANT' or self.tokens[self.index].type == 'STRING_CONSTANT':
-                                func_call_tree.add_child_node(
-                                    SyntaxTreeNode(self.tokens[self.index].value, self.tokens[self.index].type), params_list)
-                            elif self.tokens[self.index].type == 'AND':
-                                func_call_tree.add_child_node(
-                                    SyntaxTreeNode(self.tokens[self.index].value, 'AND'), params_list)
-                            self.index += 1
-                    except:
-                        print("函数调用缺少')'!")
-                        raise ProgramError('函数{}调用缺少右括号 in line {}!').format(func_name,line)
-                        
-                else:
-                    print('function call error!')
-                    raise ProgramError('函数{}调用错误 in line {}!').format(func_name,line)
-                    
-                self.index += 1
-            self.index += 1
 
     # 声明语句
     def statement(self, father=None):
@@ -647,59 +615,16 @@ class Parser(object):
         # 常变量表达式部分
         while self.tokens[self.index].type != 'SEMICOLON':
             # 被赋值的变量
-            if self.tokens[self.index].type == 'IDENTIFIER':
+            if self.tokens[self.index].type == 'IDENTIFIER':      
                 assign_tree.add_child_node(
                     SyntaxTreeNode(self.tokens[self.index].value, 'IDENTIFIER'))
                 self.index += 1
+
             elif self.tokens[self.index].type == 'ASSIGN':
                 self.index += 1
-                # 如果不是调用函数
-                if self.tokens[self.index+1].type != 'LL_BRACKET':
-                    self.expression_statement(assign_tree.root)
-                else:
-                    break
+                self.expression_statement(assign_tree.root)
         self.index += 1
 
-        # 函数调用部分
-        if self.tokens[self.index].type == 'LL_BRACKET':
-            func_call_father = assign_tree.root
-            func_call_tree = SyntaxTree()
-            func_call_tree.current = func_call_tree.root = SyntaxTreeNode(
-                'FunctionCall')
-            assign_tree.add_child_node(func_call_tree.root, func_call_father)
-            self.index -= 1  # 当前index从函数名开始
-            while self.tokens[self.index].type != 'SEMICOLON':
-                # 函数名
-                if self.tokens[self.index].type == 'IDENTIFIER':
-                    func_call_tree.add_child_node(
-                        SyntaxTreeNode(self.tokens[self.index].value, 'FUNCTION_NAME'))
-                # 左小括号
-                elif self.tokens[self.index].type == 'LL_BRACKET':
-                    self.index += 1
-                    params_list = SyntaxTreeNode('CallParameterList')
-                    func_call_tree.add_child_node(
-                        params_list, func_call_tree.root)
-                    try:
-                        while self.tokens[self.index].type != 'RL_BRACKET':
-                            if self.tokens[self.index].type == 'IDENTIFIER' or self.tokens[self.index].type == 'DIGIT_CONSTANT' or self.tokens[self.index].type == 'STRING_CONSTANT':
-                                func_call_tree.add_child_node(
-                                    SyntaxTreeNode(self.tokens[self.index].value, self.tokens[self.index].type), params_list)
-                                func_name = self.tokens[self.index].value
-                                line = self.tokens[self.index].line
-                            elif self.tokens[self.index].type == 'AND':
-                                func_call_tree.add_child_node(
-                                    SyntaxTreeNode(self.tokens[self.index].value, 'AND'), params_list)
-                            self.index += 1
-                    except:
-                        print("函数调用缺少')'!")
-                        raise ProgramError('函数{}调用缺少右括号 in line {}').format(func_name,line)
-                        
-                else:
-                    print('function call error!')
-                    raise ProgramError('函数{}调用错误 in line {}').format(func_name,line)
-                    
-                self.index += 1
-            self.index += 1
 
     # while语句
     def while_statement(self, father=None):
@@ -712,8 +637,11 @@ class Parser(object):
         if self.tokens[self.index].type == 'LL_BRACKET':
             self.index += 1
             tmp_index = self.index
-            while self.tokens[tmp_index].type != 'RL_BRACKET':
-                tmp_index += 1
+            try:
+                while self.tokens[tmp_index].type != 'RL_BRACKET' or self.tokens[tmp_index+1].type != 'LB_BRACKET':
+                    tmp_index += 1
+            except IndexError:
+                raise ProgramError("While循环缺少右括号或左花括号 in line {}".format(self.tokens[self.index].line))
             self.expression_statement(while_tree.root, tmp_index)
             self.index += 1
         else:
@@ -740,9 +668,14 @@ class Parser(object):
             elif token_type == 'LL_BRACKET':
                 self.index += 1
                 # 首先找到右小括号的位置
+
                 tmp_index = self.index
-                while self.tokens[tmp_index].type != 'RL_BRACKET':
-                    tmp_index += 1
+                try:
+                    while self.tokens[tmp_index].type != 'RL_BRACKET' or self.tokens[tmp_index+1].type != 'LB_BRACKET':
+                        a = self.tokens[tmp_index].value
+                        tmp_index += 1
+                except IndexError:
+                    raise ProgramError("For循环缺少右括号或左花括号 in line {}".format(self.tokens[self.index].line))
                 # for语句中的第一个分号前的部分
                 # 如果是变量初始化
                 if self.tokens[self.index].value in keywords[0]:
@@ -760,13 +693,25 @@ class Parser(object):
                             self.tokens[self.index].line))
                         raise ProgramError("错误的变量初始化类型：func in line {}".format(
                             self.tokens[self.index].line))
-                        
-                        
-                # 要么就是赋值
-                else:
+                
+                # 要么是赋值
+                elif self.tokens[self.index].type == 'IDENTIFIER':
+                    # 函数调用，在这里不合法
+                    if self.tokens[self.index+1].type == 'LL_BRACKET':
+                        raise ProgramError("错误的for循环语法 in line {}!".format(self.tokens[self.index].line))
                     self.assignment_statement(for_tree.root)
+                # 要么是空
+                elif self.tokens[self.index].type == 'SEMICOLON':
+                    None_tree = SyntaxTree()
+                    None_tree.current = None_tree.root = SyntaxTreeNode('EmptyNode')
+                    self.tree.add_child_node(None_tree.root, for_tree.root)
+                    self.index += 1
+                # 要么是其他的
+                else:
+                    raise ProgramError("错误的for循环语法 in line {}!".format(self.tokens[self.index].line))
                 # 两个分号中间的部分
                 self.expression_statement(for_tree.root)
+            
                 self.index += 1
                 # 第二个分号后的部分
                 self.expression_statement(for_tree.root, tmp_index)
@@ -950,73 +895,110 @@ class Parser(object):
         # 转换成的逆波兰表达式结果
         reverse_polishexpression_statement = []
         # 中缀表达式转为后缀表达式，即逆波兰表达式
-        while self.tokens[self.index].type != 'SEMICOLON':
-            if index and self.index >= index:
-                break
-            # 如果是常量
-            if self.tokens[self.index].type == 'DIGIT_CONSTANT':
-                tree = SyntaxTree()
-                tree.current = tree.root = SyntaxTreeNode(
-                    'Expression', 'Constant')
-                tree.add_child_node(
-                    SyntaxTreeNode(self.tokens[self.index].value, '_Constant'))
-                reverse_polishexpression_statement.append(tree)
-            elif self.tokens[self.index].type == 'BOOL_CONSTANT':
-                tree = SyntaxTree()
-                tree.current = tree.root = SyntaxTreeNode(
-                    'Expression', 'Constant')
-                tree.add_child_node(
-                    SyntaxTreeNode(self.tokens[self.index].value, 'BOOL_CONSTANT'))
-                reverse_polishexpression_statement.append(tree)
-            # 如果是字符串常量
-            if self.tokens[self.index].type == 'STRING_CONSTANT':
-                tree = SyntaxTree()
-                tree.current = tree.root = SyntaxTreeNode(
-                    'Expression', 'Constant')
-                tree.add_child_node(
-                    SyntaxTreeNode(self.tokens[self.index].value, self.tokens[self.index].type))
-                reverse_polishexpression_statement.append(tree)
-            # 如果是变量
-            elif self.tokens[self.index].type == 'IDENTIFIER':
-                # 变量
-                tree = SyntaxTree()
-                tree.current = tree.root = SyntaxTreeNode(
-                    'Expression', 'Variable')
-                tree.add_child_node(
-                    SyntaxTreeNode(self.tokens[self.index].value, '_Variable'))
-                reverse_polishexpression_statement.append(tree)
-            # 如果是运算符
-            elif self.tokens[self.index].value in operators or self.tokens[self.index].type == 'LL_BRACKET' or self.tokens[self.index].type == 'RL_BRACKET':
-                tree = SyntaxTree()
-                tree.current = tree.root = SyntaxTreeNode(
-                    'Operator', 'Operator')
-                tree.add_child_node(
-                    SyntaxTreeNode(self.tokens[self.index].value, '_Operator'))
 
-                # 如果是左括号，直接压栈
-                if self.tokens[self.index].type == 'LL_BRACKET':
+        try:
+            while self.tokens[self.index].type != 'SEMICOLON':
+                if index and self.index >= index:
+                    break
+                # 如果是常量
+                if self.tokens[self.index].type == 'DIGIT_CONSTANT':
+                    tree = SyntaxTree()
+                    tree.current = tree.root = SyntaxTreeNode(
+                        'Expression', 'Constant')
+                    tree.add_child_node(
+                        SyntaxTreeNode(self.tokens[self.index].value, 'DIGIT_CONSTANT'))
+                    reverse_polishexpression_statement.append(tree)
+                elif self.tokens[self.index].type == 'BOOL_CONSTANT':
+                    tree = SyntaxTree()
+                    tree.current = tree.root = SyntaxTreeNode(
+                        'Expression', 'Constant')
+                    tree.add_child_node(
+                        SyntaxTreeNode(self.tokens[self.index].value, 'BOOL_CONSTANT'))
+                    reverse_polishexpression_statement.append(tree)
+                # 如果是字符串常量
+                elif self.tokens[self.index].type == 'STRING_CONSTANT':
+                    tree = SyntaxTree()
+                    tree.current = tree.root = SyntaxTreeNode(
+                        'Expression', 'Constant')
+                    tree.add_child_node(
+                        SyntaxTreeNode(self.tokens[self.index].value, self.tokens[self.index].type))
+                    reverse_polishexpression_statement.append(tree)
+                # 如果是变量或函数调用
+                elif self.tokens[self.index].type == 'IDENTIFIER':
+                    tree = SyntaxTree()
+                    # 函数调用
+                    if self.tokens[self.index+1].type == 'LL_BRACKET':     
+                        tree.current = tree.root = SyntaxTreeNode(
+                            'Expression', 'FunctionCall')
+                        tree.add_child_node(
+                            SyntaxTreeNode(self.tokens[self.index].value, 'FUNCTION_NAME'))
+                        params_list = SyntaxTreeNode('CallParameterList')
+                        tree.add_child_node(params_list,tree.root)
+                        func_name = self.tokens[self.index].value
+                        line = self.tokens[self.index].line
+                        
+                        try:
+                            self.index += 1
+                            while self.tokens[self.index].type != 'RL_BRACKET':
+                                if father.type == 'ForControl':
+                                    if self.tokens[self.index].type == 'SEMICOLON':
+                                        raise ProgramError("函数{}调用缺少右括号 in line {}".format(func_name,line))
+                                a = self.tokens[self.index].value
+                                if self.tokens[self.index].type == 'IDENTIFIER' or self.tokens[self.index].type == 'DIGIT_CONSTANT' or self.tokens[self.index].type == 'STRING_CONSTANT':
+                                    tree.add_child_node(
+                                        SyntaxTreeNode(self.tokens[self.index].value, self.tokens[self.index].type), params_list)
+                                self.index +=1
+                        except IndexError:
+                            raise ProgramError("函数{}调用缺少右括号 in line {}".format(func_name,line))
+                            
+                        reverse_polishexpression_statement.append(tree)
+                    # 变量
+                    else:
+                        tree.current = tree.root = SyntaxTreeNode(
+                            'Expression', 'Variable')
+                        tree.add_child_node(
+                            SyntaxTreeNode(self.tokens[self.index].value, '_Variable'))
+                        reverse_polishexpression_statement.append(tree)
+                        
+                # 如果是左括号
+                elif self.tokens[self.index].type == 'LL_BRACKET':
+                    tree = SyntaxTree()
+                    tree.current = tree.root = SyntaxTreeNode(
+                        'LL_BRACKET','LL_BRACKET')
                     operator_stack.append(tree)
-                # 如果是右括号，弹栈直到遇到左括号为止
+                
+                # 如果是右括号
                 elif self.tokens[self.index].type == 'RL_BRACKET':
-                    while operator_stack and operator_stack[-1].current.value != '(':
+                    while operator_stack and operator_stack[-1].current.value != 'LL_BRACKET':
                         reverse_polishexpression_statement.append(
                             operator_stack.pop())
                     # 将左括号弹出来
-                    if operator_stack:
+                    if operator_stack and operator_stack[-1].current.value == 'LL_BRACKET':
                         operator_stack.pop()
-                # 其他只能是运算符
-                else:
-                    
-                    while operator_stack and operator_stack[-1].current.value != '(' and operator_priority[tree.current.value] < operator_priority[operator_stack[-1].current.value]:
-                        reverse_polishexpression_statement.append(
-                            operator_stack.pop())
-                    operator_stack.append(tree)
-            self.index += 1
-        
+                        
+                # 如果是运算符
+                elif self.tokens[self.index].value in operators or self.tokens[self.index].type == 'RL_BRACKET':
+                    tree = SyntaxTree()
+                    tree.current = tree.root = SyntaxTreeNode(
+                        'Operator', 'Operator')
+                    tree.add_child_node(
+                        SyntaxTreeNode(self.tokens[self.index].value, '_Operator'))
+                    if not operator_stack or operator_stack[-1].current.value == 'LL_BRACKET':
+                        operator_stack.append(tree)
+                    else:
+                        while operator_stack and operator_stack[-1].current.value != 'LL_BRACKET' and operator_priority[tree.current.value] <= operator_priority[operator_stack[-1].current.value]:
+                            reverse_polishexpression_statement.append(
+                                operator_stack.pop()) 
+                        operator_stack.append(tree)
+                self.index += 1
+                
+        except IndexError:
+            raise ProgramError("缺少分号 in line {}!".format(self.tokens[self.index-1].line-1))
+            
         # 最后将符号栈清空，最终得到逆波兰表达式reverse_polishexpression_statement
         while operator_stack:
             reverse_polishexpression_statement.append(operator_stack.pop())
-    
+        
         # 操作数栈
         operand_stack = []
         
@@ -1043,19 +1025,27 @@ class Parser(object):
                         b = operand_stack.pop()
                         a = operand_stack.pop()
                     except:
-                        print("ERROR:请检查运算符{}是否具有两个操作数!".format(item.current.value))
-                        raise ProgramError("请检查运算符{}是否具有两个操作数 in line {}!".format(item.current.value,self.tokens[self.index].line))
-                        
-                    new_tree = SyntaxTree()
-                    new_tree.current = new_tree.root = SyntaxTreeNode(
-                        'Expression', 'DoubleOperand',reverse_polishexpression_statement)
-                    # 第一个操作数
-                    new_tree.add_child_node(a.root)
-                    # 操作符
-                    new_tree.add_child_node(item.root, new_tree.root)
-                    # 第二个操作数
-                    new_tree.add_child_node(b.root, new_tree.root)
-                    operand_stack.append(new_tree)
+                        if item.current.value != '+' and item.current.value !='-':
+                            raise ProgramError("请检查运算符{}是否具有两个操作数 in line {}!".format(item.current.value,self.tokens[self.index].line))
+                        else:
+                            # 正数或负数，为单目运算符了
+                            new_tree = SyntaxTree()
+                            new_tree.current = new_tree.root = SyntaxTreeNode(
+                                'Expression', 'SingleOperand',reverse_polishexpression_statement)
+                            new_tree.add_child_node(item.root,new_tree.root)
+                            new_tree.add_child_node(b.root,new_tree.root)
+                            operand_stack.append(new_tree)
+                    else:
+                        new_tree = SyntaxTree()
+                        new_tree.current = new_tree.root = SyntaxTreeNode(
+                            'Expression', 'DoubleOperand',reverse_polishexpression_statement)
+                        # 第一个操作数
+                        new_tree.add_child_node(a.root)
+                        # 操作符
+                        new_tree.add_child_node(item.root, new_tree.root)
+                        # 第二个操作数
+                        new_tree.add_child_node(b.root, new_tree.root)
+                        operand_stack.append(new_tree)
                 else:
                     print('operator %s not supported!' % item.current.value)
                     raise ProgramError("运算符{}不支持 in line {}!".format(item.current.value,self.tokens[self.index].line))
@@ -1069,35 +1059,36 @@ class Parser(object):
         func_call_tree.current = func_call_tree.root = SyntaxTreeNode(
             'FunctionCall')
         self.tree.add_child_node(func_call_tree.root, father)
-
-        while self.tokens[self.index].type != 'SEMICOLON':
-            # 函数名
-            if self.tokens[self.index].type == 'IDENTIFIER':
-                func_call_tree.add_child_node(
-                    SyntaxTreeNode(self.tokens[self.index].value, 'FUNCTION_NAME'))
-            # 左小括号
-            elif self.tokens[self.index].type == 'LL_BRACKET':
+        try:
+            while self.tokens[self.index].type != 'SEMICOLON':
+                # 函数名
+                if self.tokens[self.index].type == 'IDENTIFIER':
+                    func_call_tree.add_child_node(
+                        SyntaxTreeNode(self.tokens[self.index].value, 'FUNCTION_NAME'))
+                # 左小括号
+                elif self.tokens[self.index].type == 'LL_BRACKET':
+                    self.index += 1
+                    params_list = SyntaxTreeNode('CallParameterList')
+                    func_call_tree.add_child_node(params_list, func_call_tree.root)
+                    try:
+                        while self.tokens[self.index].type != 'RL_BRACKET':
+                            if self.tokens[self.index].type == 'IDENTIFIER' or self.tokens[self.index].type == 'DIGIT_CONSTANT' or self.tokens[self.index].type == 'STRING_CONSTANT':
+                                func_call_tree.add_child_node(
+                                    SyntaxTreeNode(self.tokens[self.index].value, self.tokens[self.index].type), params_list)
+                            elif self.tokens[self.index].type == 'AND':
+                                func_call_tree.add_child_node(
+                                    SyntaxTreeNode(self.tokens[self.index].value, 'AND'), params_list)
+                            self.index += 1
+                    except:
+                        print("函数调用缺少')'!")
+                        raise ProgramError("函数调用缺少右括号 in line {}!".format(self.tokens[self.index].line))
+                        
+                else:
+                    print('function call error!')
+                    raise ProgramError("函数调用错误 in line {}!".format(self.tokens[self.index].line))
                 self.index += 1
-                params_list = SyntaxTreeNode('CallParameterList')
-                func_call_tree.add_child_node(params_list, func_call_tree.root)
-                try:
-                    while self.tokens[self.index].type != 'RL_BRACKET':
-                        if self.tokens[self.index].type == 'IDENTIFIER' or self.tokens[self.index].type == 'DIGIT_CONSTANT' or self.tokens[self.index].type == 'STRING_CONSTANT':
-                            func_call_tree.add_child_node(
-                                SyntaxTreeNode(self.tokens[self.index].value, self.tokens[self.index].type), params_list)
-                        elif self.tokens[self.index].type == 'AND':
-                            func_call_tree.add_child_node(
-                                SyntaxTreeNode(self.tokens[self.index].value, 'AND'), params_list)
-                        self.index += 1
-                except:
-                    print("函数调用缺少')'!")
-                    raise ProgramError("函数调用缺少右括号 in line {}!".format(self.tokens[self.index].line))
-                    
-            else:
-                print('function call error!')
-                raise ProgramError("函数调用错误 in line {}!".format(self.tokens[self.index].line))
-                
-            self.index += 1
+        except IndexError:
+            raise ProgramError("缺少分号或右括号 in line {}!".format(self.tokens[self.index-1].line-1))
         self.index += 1
 
     # return语句
@@ -1107,6 +1098,7 @@ class Parser(object):
         return_tree = SyntaxTree()
         return_tree.current = return_tree.root = SyntaxTreeNode('Return')
         self.tree.add_child_node(return_tree.root, father)
+
         while self.tokens[self.index].type != 'SEMICOLON':
             # 被赋值的变量
             if self.tokens[self.index].type == 'RETURN':
@@ -1142,7 +1134,6 @@ class Parser(object):
                 if third_next_token_type == 'ASSIGN':
                     print("错误的初始化方式:==")
                     raise ProgramError("错误的初始化方式'==' in line {}!".format(self.tokens[self.index].line))
-                    
                 return 'VARIABLE_INITIALIZATION'
             else:
                 return 'ERROR'
@@ -1186,12 +1177,12 @@ class Parser(object):
             if sentence_pattern == 'FUNCTION_STATEMENT':
                 self.function_statment()
                 continue
-            # 声明语句
-            elif sentence_pattern == 'STATEMENT':
-                self.statement()
-            # 函数调用
-            elif sentence_pattern == 'FUNCTION_CALL':
-                self.function_call_statement()
+            # # 声明语句
+            # elif sentence_pattern == 'STATEMENT':
+            #     self.statement()
+            # # 函数调用
+            # elif sentence_pattern == 'FUNCTION_CALL':
+            #     self.function_call_statement()
             else:
                 print('main error!')
                 raise ProgramError("主函数错误 in line {}!".format(self.tokens[self.index].line))
@@ -1257,7 +1248,7 @@ class Semantic(object):
         # 函数调用标志字典
         self.function_call_flag = {}
         # 内置函数返回值变量
-        self.inside_function_return_value_dict = {}
+        self.inside_function_return_value_tuple = ()
         # 符号字典：存储多个函数块作用域内的变量，初始默认含有main函数的变量字典
         self.symbol_dict = {'main': {}}
         # 符号表
@@ -1269,12 +1260,15 @@ class Semantic(object):
         # 语法树转列表-->暂时没用
         self.ast_node_stack.append(self.root)
         self.ast_to_stack(self.root)
-        # 循环跳转标志(break,continue)
-        self.loop_finish_flag = False
+        # 跳转标志(break,continue,return)
+        self.jump_flag = False
         # 预遍历所有函数
         self._pre_traverse(self.root)
-        # 预编译后，当前函数设为main
-        self.current_function = 'main'
+        # 若存在主函数节点
+        if self.main_node:
+            # 预编译后，当前函数设为main
+            self.current_function = 'main'
+            self.traverse(self.main_node)
         
     def ast_to_stack(self, node):
         if not node:
@@ -1429,13 +1423,16 @@ class Semantic(object):
                 return "STRING_CONSTANT"
             else:
                 return "NOT_CONSTANT"
+        else:
+            return "NONE"
+        
         
     def extract_string(self,string):
         if string[0]!='\"':
             return string
         else:
             return string[1:-1]
-            
+         
     # 函数调用
     def _function_call(self, node=None):
         current_node = node.first_son
@@ -1621,16 +1618,16 @@ class Semantic(object):
                 
             else:
                 arg = parameter_name_list[0]
-            if self.inside_function_return_value_dict:
-                self.inside_function_return_value_dict = {}
+            if self.inside_function_return_value_tuple:
+                self.inside_function_return_value_tuple = ()
             if func_name == "printf":
                 self.printf_function(arg)
             elif func_name == "readInt":
-                self.inside_function_return_value_dict[self.readInt_function(arg)] = 'int'
+                self.inside_function_return_value_tuple = (self.readInt_function(arg),'int')
             elif func_name == "readFloat":
-                self.inside_function_return_value_dict[self.readFloat_function(arg)] = 'float'
+                self.inside_function_return_value_tuple = (self.readFloat_function(arg),'float')
             elif func_name == "readString":
-                self.inside_function_return_value_dict[self.readString_function(arg)] = 'string'
+                self.inside_function_return_value_tuple = (self.readString_function(arg),'string')
             
     def printf_function(self,arg=None):
         if not arg:
@@ -1675,7 +1672,6 @@ class Semantic(object):
                 arg = self.symbol_dict[self.current_function][arg]['value']
                 
             if arg_type == "int" or arg_type == "float":
-                print("错误的参数类型：required string but given {}.".format(arg_type))
                 raise ProgramError("错误的参数类型：required string but given {}.".format(arg_type))
                 
             elif arg_type == "string":
@@ -1688,13 +1684,11 @@ class Semantic(object):
                 else:
                     return_value = input(extract_string)
             else: # ERROR
-                print("不受支持的参数类型 in function 'readInt'!")
                 raise ProgramError("不受支持的参数类型 in function 'readInt'!")
 
         try:
-            return int(return_value)
+            return int(eval(return_value))
         except:
-            print("错误的输入类型!请确保输入的是一个整型!")
             raise ProgramError("不受支持的参数类型 in function 'readInt'!")
 
     
@@ -1822,16 +1816,29 @@ class Semantic(object):
             print("不支持的赋值类型:{}".format(current_node.right.value))
             raise ProgramError("不支持的赋值类型:{}".format(current_node.right.value))
             
-
         # 首先判断该变量是否已进行过声明
         if current_node.value not in self.symbol_table:
             print("变量{}尚未声明!".format(current_node.value))
             raise ProgramError("变量{}尚未声明!".format(current_node.value))
             
-
         # 如果右子树是常量表达式
         if current_node.right.value == 'Expression':
-            expres = self._expression(current_node.right)
+            # 如果是单个函数
+            if current_node.right.type == 'FunctionCall':
+                func_name = current_node.right.first_son.value
+                if func_name not in self.symbol_dict:
+                    raise ProgramError("函数{}尚未声明，不可调用!".format(func_name))
+                self._function_call(current_node.right)
+                if func_name in self.function_return_value_dict:      
+                    result = self.function_return_value_dict[func_name] 
+                    self.jump_flag = False
+                else:
+                    result = None
+                constant_type = self.judge_constant_value_type(result)
+                expres = {'type':constant_type,'value':result}
+            else:
+                expres = self._expression(current_node.right)
+            
             # 首先判断该变量是否已进行过声明
             if current_node.value not in self.symbol_table:
                 print("变量{}未声明!".format(current_node.value))
@@ -1926,71 +1933,6 @@ class Semantic(object):
                 print("不支持的赋值类型:{}".format(expres['type']))
                 raise ProgramError("不支持的赋值类型:{}".format(expres['type']))
                 
-            
-        # 如果右子树是函数调用
-        else:
-            tmp_symbol_table = self.symbol_table
-            self._function_call(current_node.right)
-            self.symbol_table = tmp_symbol_table
-            func_name = current_node.right.first_son.value
-            if func_name not in inside_function:
-                # 如果有返回值
-                return_value = self.function_return_value_dict[func_name]
-                var_field_type = current_node.father.left.first_son.first_son.value # field_type
-                if return_value != None:
-                    return_value_type = self.judge_constant_value_type(return_value)
-                    var_value_type = self.judge_constant_type(var_field_type)
-                    if return_value_type != var_value_type:
-                        print("变量 {} 的常数类型: {} 和函数 {} 的返回值常数类型 {} 不一致!".format(current_node.value,var_value_type,func_name,return_value_type))
-                        raise ProgramError("变量 {} 的常数类型: {} 和函数 {} 的返回值常数类型 {} 不一致!".format(current_node.value,var_value_type,func_name,return_value_type))
-                        
-                    if var_field_type == 'int':
-                        self.symbol_table[current_node.value]['value'] = round(float(return_value))
-                    elif var_field_type == 'float':
-                        self.symbol_table[current_node.value]['value'] = float(return_value)
-                    elif var_field_type == 'string':
-                        self.symbol_table[current_node.value]['value'] = return_value
-                    elif var_field_type == 'bool':
-                        if return_value == 'True':
-                            self.symbol_table[current_node.value]['value'] = True
-                        elif return_value == 'False':
-                            self.symbol_table[current_node.value]['value'] = False
-                    
-                    flag = 1
-    
-                    self.symbol_table[current_node.value]['init'] = flag
-                    self.symbol_dict[self.current_function] = self.symbol_table
-    
-                else:
-                    print("无返回值的函数无法用于变量初始化!函数名:{}".format(self.current_function))
-                    raise ProgramError("无返回值的函数无法用于变量初始化!函数名:{}".format(self.current_function))
-                    
-            else:
-                return_value = list(self.inside_function_return_value_dict.keys())[0]
-                return_type = self.judge_constant_type(self.inside_function_return_value_dict[return_value])
-                var_field_type = self.symbol_dict[self.current_function][current_node.value]['field_type']
-                var_type = self.judge_constant_type(var_field_type)
-                
-                if return_type != var_type:
-                    print("变量 {} 的常数类型: {} 和函数 {} 的返回值常数类型 {} 不一致!".format(current_node.value,var_type,func_name,return_type))
-                    raise ProgramError("变量 {} 的常数类型: {} 和函数 {} 的返回值常数类型 {} 不一致!".format(current_node.value,var_type,func_name,return_type))
-                    
-                    
-                if var_field_type == 'int':
-                    self.symbol_table[current_node.value]['value'] = round(float(return_value))
-                elif var_field_type == 'float':
-                    self.symbol_table[current_node.value]['value'] = float(return_value)
-                elif var_field_type == 'string':
-                    self.symbol_table[current_node.value]['value'] = return_value
-                elif var_field_type == 'bool':
-                    if return_value == 'True':
-                        self.symbol_table[current_node.value]['value'] = True
-                    elif return_value == 'bool':
-                        self.symbol_table[current_node.value]['value'] = False
-                        
-                flag = 1
-                self.symbol_table[current_node.value]['init'] = flag
-                self.symbol_dict[self.current_function] = self.symbol_table
 
     # 变量初始化语句（声明+赋值）
     def _variable_initialization(self, node=None):
@@ -2044,7 +1986,26 @@ class Semantic(object):
 
         # 如果右子树是常量表达式
         if current_node.right.value == 'Expression':
-            expres = self._expression(current_node.right)
+            # 如果是单个函数
+            if current_node.right.type == 'FunctionCall':
+                func_name = current_node.right.first_son.value
+                if func_name not in self.symbol_dict and func_name not in inside_function:
+                    raise ProgramError("函数{}尚未声明，不可调用!".format(func_name))
+                self._function_call(current_node.right)
+                if func_name in self.function_return_value_dict:      
+                    result = self.function_return_value_dict[func_name] 
+                    constant_type = self.judge_constant_value_type(result)
+                    self.jump_flag = False
+                elif func_name in inside_function:
+                    result = self.inside_function_return_value_tuple[0]
+                    constant_type = self.judge_constant_type(self.inside_function_return_value_tuple[1])
+                else:
+                    result = None
+                    constant_type = "None"
+                
+                expres = {'type':constant_type,'value':result}
+            else:
+                expres = self._expression(current_node.right)
             # 首先判断该变量是否已进行过声明
             if current_node.value not in self.symbol_table:
                 print("变量{}未声明!".format(current_node.value))
@@ -2127,70 +2088,10 @@ class Semantic(object):
                 self.symbol_dict[self.current_function] = self.symbol_table
                 
             else:
+                pdb.set_trace()
                 print("不支持的赋值类型:{}".format(expres['type']))
                 raise ProgramError("不支持的赋值类型:{}".format(expres['type']))
-                
-            
-        # 如果右子树是函数调用
-        else:
-            tmp_symbol_table = self.symbol_table
-            self._function_call(current_node.right)
-            self.symbol_table = tmp_symbol_table
-            func_name = current_node.right.first_son.value
-            if func_name not in inside_function:
-                # 如果有返回值
-                return_value = self.function_return_value_dict[func_name]
-                var_field_type = current_node.father.left.first_son.first_son.value # field_type
-                if return_value != None:
-                    return_value_type = self.judge_constant_value_type(return_value)
-                    var_value_type = self.judge_constant_type(var_field_type)
-                    
-                    if return_value_type != var_value_type:
-                        print("变量 {} 的常数类型: {} 和函数 {} 的返回值常数类型 {} 不一致!".format(current_node.value,var_value_type,func_name,return_value_type))
-                        raise ProgramError("变量 {} 的常数类型: {} 和函数 {} 的返回值常数类型 {} 不一致!".format(current_node.value,var_value_type,func_name,return_value_type))
-                        
-                    if var_field_type == 'int':
-                        self.symbol_table[current_node.value]['value'] = round(float(return_value))
-                    elif var_field_type == 'float':
-                        self.symbol_table[current_node.value]['value'] = float(return_value)
-                    elif var_field_type == 'string':
-                        self.symbol_table[current_node.value]['value'] = return_value
-                    elif var_field_type == 'bool':
-                        self.symbol_table[current_node.value]['value'] = return_value
-                    
-                    flag = 1
-    
-                    self.symbol_table[current_node.value]['init'] = flag
-                    self.symbol_dict[self.current_function] = self.symbol_table
-    
-                else:
-                    print("无返回值的函数无法用于变量初始化!函数名:{}".format(self.current_function))
-                    raise ProgramError("无返回值的函数无法用于变量初始化!函数名:{}".format(self.current_function))
-                    
-            else:
-                return_value = list(self.inside_function_return_value_dict.keys())[0]
-                return_type = self.judge_constant_type(self.inside_function_return_value_dict[return_value])
-                var_field_type = self.symbol_dict[self.current_function][current_node.value]['field_type']
-                var_type = self.judge_constant_type(var_field_type)
-                
-                if return_type != var_type:
-                    print("变量 {} 的常数类型: {} 和函数 {} 的返回值常数类型 {} 不一致!".format(current_node.value,var_type,func_name,return_type))
-                    raise ProgramError("变量 {} 的常数类型: {} 和函数 {} 的返回值常数类型 {} 不一致!".format(current_node.value,var_type,func_name,return_type))
-                    
-                    
-                if var_field_type == 'int':
-                    self.symbol_table[current_node.value]['value'] = round(float(return_value))
-                elif var_field_type == 'float':
-                    self.symbol_table[current_node.value]['value'] = float(return_value)
-                elif var_field_type == 'string':
-                    self.symbol_table[current_node.value]['value'] = return_value
-                elif var_field_type == 'bool':
-                    self.symbol_table[current_node.value]['value'] = return_value
-
-                flag = 1
-                self.symbol_table[current_node.value]['init'] = flag
-                self.symbol_dict[self.current_function] = self.symbol_table
-            
+                       
     # for语句
     def _control_for(self, node=None):
         if self.current_function!='main':
@@ -2206,13 +2107,41 @@ class Semantic(object):
                 self._assignment(current_node)
             elif current_node.value == 'VARIABLE_INITIALIZATION':
                 self._variable_initialization(current_node)
+            elif current_node.value == 'EmptyNode': # 空节点，略过
+                pass
             # for第二、三部分
             elif current_node.value == 'Expression':
                 # 第二部分
                 if (cnt == 2):    
                     cnt += 1
                     # 表达式结果为False则跳出循环
-                    result = self._calculate_expression(current_node)
+                    # 如果不存在右节点，说明这是一个单节点表达式，即判断节点值本身的bool
+                    if not current_node.first_son.right:
+                        node_type = current_node.first_son.type
+                        node_value = current_node.first_son.value
+                        # 变量
+                        if node_type == '_Variable':
+                            if node_value not in self.symbol_dict[self.current_function] or self.symbol_dict[self.current_function][node_value]['init'] == 0:
+                                raise ProgramError("变量{}尚未声明或初始化!".format(node_value)) 
+                            result = bool(self.symbol_dict[self.current_function][node_value]['value'])
+                        # 常数
+                        elif node_type == 'DIGIT_CONSTANT' or node_type == 'STIRNG_CONSTANT' or node_type == 'BOOL_CONSTANT':
+                            result = bool(eval(node_value))
+                    
+                    elif current_node.type == 'FunctionCall':
+                        func_name = current_node.first_son.value
+                        if func_name not in self.symbol_dict and func_name not in inside_function:
+                            raise ProgramError("函数{}尚未声明，无法调用!".format(func_name))
+                        self._function_call(current_node)
+                        if func_name in self.function_return_value_dict:      
+                            result = self.function_return_value_dict[func_name] 
+                            self.jump_flag = False
+                        elif func_name in inside_function:   
+                            result = self.inside_function_return_value_tuple[0]
+                        else:
+                            result = None
+                    else:
+                        result = self._calculate_expression(current_node)
                     if not result:
                         break
                 # 第三部分
@@ -2242,20 +2171,59 @@ class Semantic(object):
         while current_node:
             if current_node.value == 'IfControl':
                 if current_node.first_son.value != 'Expression' and current_node.first_son.right.value != 'Sentence':
-                    print("if语句错误!")
                     raise ProgramError("if语句错误!")
-   
-                result = self._calculate_expression(current_node.first_son)
+                
+                # 如果不存在右节点，说明这是一个单节点表达式，即判断节点值本身的bool
+                if not current_node.first_son.first_son.right:
+                    node_type = current_node.first_son.first_son.type
+                    node_value = current_node.first_son.first_son.value
+                    # 变量
+                    if node_type == '_Variable':
+                        if node_value not in self.symbol_dict[self.current_function] or self.symbol_dict[self.current_function][node_value]['init'] == 0:
+                            raise ProgramError("变量{}尚未声明或初始化!".format(node_value))
+                        result = bool(self.symbol_dict[self.current_function][node_value]['value'])
+                    # 常数
+                    elif node_type == 'DIGIT_CONSTANT' or node_type == 'STIRNG_CONSTANT' or node_type == 'BOOL_CONSTANT':
+                        result = bool(eval(node_value))
+                elif current_node.first_son.type == 'FunctionCall':
+                    func_name = current_node.first_son.first_son.value
+                    if func_name not in self.symbol_dict and func_name not in inside_function:
+                        raise ProgramError("函数{}尚未声明，无法调用!".format(func_name))
+                    self._function_call(current_node.first_son)
+                    if func_name in self.function_return_value_dict: # 有返回值
+                        result = self.function_return_value_dict[func_name] 
+                        self.jump_flag = False
+                    elif func_name in inside_function:
+                        result = self.inside_function_return_value_tuple[0]
+                    else: # 无返回值
+                        result = None
+                else:
+                    result = self._calculate_expression(current_node.first_son)
                 if result:
                     executed_flag = True
                     self.traverse(current_node.first_son.right.first_son)
             
             elif current_node.value == 'ElifControl':
                 if current_node.first_son.value != 'Expression' and current_node.first_son.right.value != 'Sentence':
-                    print("elif语句错误!")
                     raise ProgramError("elif语句错误!")
    
-                result = self._calculate_expression(current_node.first_son)
+                # 同理
+                if not current_node.first_son.first_son.right:
+                    node_type = current_node.first_son.first_son.type
+                    node_value = current_node.first_son.first_son.value
+                    # 变量
+                    if node_type == '_Variable':
+                        if node_value not in self.symbol_dict[self.current_function] or self.symbol_dict[self.current_function][node_value]['init'] == 0:
+                            raise ProgramError("变量{}尚未声明或初始化!".format(node_value))
+                        result = bool(self.symbol_dict[self.current_function][node_value]['value'])
+                    # 常数
+                    elif node_type == 'DIGIT_CONSTANT' or node_type == 'STIRNG_CONSTANT' or node_type == 'BOOL_CONSTANT':
+                        result = bool(eval(node_value))
+                    # 函数 
+                    else:
+                        pass
+                else:
+                    result = self._calculate_expression(current_node.first_son)
                 if result:
                     executed_flag = True
                     self.traverse(current_node.first_son.right.first_son)
@@ -2274,7 +2242,37 @@ class Semantic(object):
         loop_node = None
         while current_node:
             if current_node.value == 'Expression':
-                result = self._calculate_expression(current_node)
+                # 如果不存在右节点，说明这是一个单节点表达式，即判断节点值本身的bool
+                if not current_node.first_son.right:
+                    node_type = current_node.first_son.type
+                    node_value = current_node.first_son.value
+                    # 变量
+                    if node_type == '_Variable':
+                        if node_value not in self.symbol_dict[self.current_function] or self.symbol_dict[self.current_function][node_value]['init'] == 0:
+                            raise ProgramError("变量{}尚未声明或初始化!".format(node_value))
+                        result = bool(self.symbol_dict[self.current_function][node_value]['value'])
+                    # 常数
+                    elif node_type == 'DIGIT_CONSTANT' or node_type == 'STIRNG_CONSTANT' or node_type == 'BOOL_CONSTANT':
+                        result = bool(eval(node_value))
+                    else:
+                        raise ProgramError("不受支持的表达式类型{}!".format(node_type))
+                
+                # 函数调用
+                elif current_node.type == 'FunctionCall':
+                    func_name = current_node.first_son.value
+                    if func_name not in self.symbol_dict and func_name not in inside_function:
+                        raise ProgramError("函数{}尚未声明，无法调用!".format(func_name))
+                    self._function_call(current_node)
+                    if func_name in self.function_return_value_dict:      
+                        result = self.function_return_value_dict[func_name] 
+                        self.jump_flag = False
+                    elif func_name in inside_function:
+                        result = self.inside_function_return_value_tuple[0]
+                    else:
+                        result = None
+                else:
+                    result = self._calculate_expression(current_node)
+
                 if not result:
                     break
             elif current_node.value == 'Sentence':
@@ -2282,10 +2280,10 @@ class Semantic(object):
                     loop_node = current_node.left
                 self.traverse(current_node.first_son)
                 if current_node.extra_info == 'break':
-                    self.loop_finish_flag = False
+                    self.jump_flag = False
                     break
                 elif current_node.extra_info == 'continue':
-                    self.loop_finish_flag = False
+                    self.jump_flag = False
                     
                 current_node = loop_node
                 continue
@@ -2298,28 +2296,25 @@ class Semantic(object):
                 return
         current_node = node.first_son
         if not current_node or not current_node.right:
-            print('return error!')
             raise ProgramError("return语句错误!")
 
         if current_node.value != 'return' or current_node.right.value != 'Expression':
-            print('return error!')
             raise ProgramError("return语句错误!")
  
         else:
             current_node = current_node.right
             expres = self._expression(current_node)
             if expres['type'] == 'VARIABLE':
-                if expres['type'] in self.symbol_dict and self.symbol_dict[self.current_function][expres['value']]['init'] == 1:
+                if expres['value'] in self.symbol_dict[self.current_function] and self.symbol_dict[self.current_function][expres['value']]['init'] == 1:
                     self.function_return_value_dict[self.current_function] = self.symbol_dict[self.current_function][expres['value']]['value']
                 else:
                     raise ProgramError("返回变量{}不存在，或尚未初始化!".format(expres['value']))
-            elif expres['type'] == 'DIGIT_CONSTANT' or expres['type'] == 'STRING_CONSTANT':
-                self.function_return_value_dict[self.current_function] = str(expres['value'])
-            elif expres['type'] == 'BOOL_CONSTANT':
+            elif expres['type'] == 'DIGIT_CONSTANT' or expres['type'] == 'STRING_CONSTANT' or expres['type'] == 'BOOL_CONSTANT':
                 self.function_return_value_dict[self.current_function] = expres['value']
             else:
                 print('return type not supported!')
                 raise ProgramError("return类型不支持!")
+            self.jump_flag = True
 
     # break语句
     def _break(self,node=None):
@@ -2339,7 +2334,7 @@ class Semantic(object):
                 sentence_node = sentence_node.right
         
         sentence_node.extra_info = "break"
-        self.loop_finish_flag = True
+        self.jump_flag = True
                 
     # continue语句
     def _continue(self,node=None):
@@ -2359,7 +2354,7 @@ class Semantic(object):
                 
         
         sentence_node.extra_info = "continue"
-        self.loop_finish_flag = True
+        self.jump_flag = True
         
     # TODO:增加识别操作符和操作数层级以还原逆波兰表达式的功能
     def _traverse_expression(self, node=None,depth = 0):
@@ -2368,7 +2363,7 @@ class Semantic(object):
         if node.type == '_Variable':
             self.expres_stack.append(
                 {'type': 'VARIABLE', 'operand': node.value,'depth':depth})
-        elif node.type == '_Constant':
+        elif node.type == 'DIGIT_CONSTANT':
             self.expres_stack.append(
                 {'type': 'DIGIT_CONSTANT', 'operand': node.value,'depth':depth})
         elif node.type == '_Operator':
@@ -2388,8 +2383,8 @@ class Semantic(object):
     def _expression(self, node=None):
         if node.type == 'Constant':
             # 如果是数值常量
-            if node.first_son.type == '_Constant':
-                return {'type': 'DIGIT_CONSTANT', 'value': node.first_son.value}
+            if node.first_son.type == 'DIGIT_CONSTANT':
+                return {'type': 'DIGIT_CONSTANT', 'value': eval(node.first_son.value)}
             # 如果是字符串常量
             elif node.first_son.type == 'STRING_CONSTANT':
                 return {'type': 'STRING_CONSTANT', 'value': node.first_son.value}
@@ -2407,7 +2402,7 @@ class Semantic(object):
         
         # 判断self是在赋值函数中调用的还是在for语句中调用的，二者语法树结构不同
         if node.left.father:
-            reverse_polishexpression_statement = [tree.current for tree in node.extra_info]
+            reverse_polishexpression_statement = [tree.current if tree.root.type !='FunctionCall' else tree.root.first_son for tree in node.extra_info]
             # 如果是赋值语句，则symbol_dict的更新交给赋值函数
             if node.left.father.value == 'Assignment':
                 result = self._traverse_statement_calculate(reverse_polishexpression_statement)
@@ -2415,10 +2410,14 @@ class Semantic(object):
                 constant_type = self.judge_constant_type(field_type)
                 return_value = {'type': constant_type, 'value': result}
                 return return_value
-            elif node.left.father.type == 'ForControl':
-                # 如果是for语句，则symbol_dict的更新需要在这里完成
-                self._traverse_statement_update(reverse_polishexpression_statement)  
-                
+            elif node.left.father.type == 'ForControl' or node.left.father.value == 'Return':
+                # 如果是for或return语句，则symbol_dict的更新需要在这里完成
+                result = self._traverse_statement_update(reverse_polishexpression_statement)  
+                field_type = self.judge_type(result)
+                constant_type = self.judge_constant_type(field_type)
+                return_value = {'type': constant_type, 'value': result}
+                return return_value
+        
     # 遍历逆波兰表达式并完成计算(更新)
     def _traverse_statement_update(self,statement):
         stack = []
@@ -2439,7 +2438,8 @@ class Semantic(object):
                 stack.append(self.symbol_dict[self.current_function][item_value]['value'])
                 name_stack.append(item_value)
                 type_stack.append('Var')
-            elif item_type == '_Constant':
+                
+            elif item_type == 'DIGIT_CONSTANT':
                 if '.' in item_value:
                     stack.append(float(item_value))
                 else:
@@ -2454,7 +2454,22 @@ class Semantic(object):
                     stack.append(False)
                 type_stack.append('BOOL')
                 name_stack.append(None)
-                
+            
+            elif item_type == 'FUNCTION_NAME':
+                if item_value not in self.symbol_dict:
+                    raise ProgramError("函数{}尚未声明，无法调用!".format(item_value))
+                else:
+                    self._function_call(item.father)
+                    func_name = item_value
+                    if func_name in self.function_return_value_dict:
+                        result = self.function_return_value_dict[func_name] 
+                        self.jump_flag = False
+                    else:
+                        result = None
+                    stack.append(result)
+                    type_stack.append('FunctionCall')
+                    name_stack.append(item_value)
+                        
             elif item_type == '_Operator':
                 # 单目运算符
                 if item_value in child_operators[0]:
@@ -2476,49 +2491,60 @@ class Semantic(object):
                     name_stack.append(None)
                 # 双目运算符
                 elif item_value in child_operators[1]:
-                    right_operand = stack.pop()
-                    left_operand = stack.pop()
-                    right_type = type_stack.pop()
-                    left_type = type_stack.pop()
-                    right_name = name_stack.pop()
-                    left_name = name_stack.pop()
-                    if item_value == '+':
-                        result = left_operand + right_operand
-                    elif item_value == '-':
-                        result = left_operand - right_operand
-                    elif item_value == '*':
-                        result = left_operand * right_operand
-                    elif item_value == '/':
-                        result = left_operand / right_operand
-                    elif item_value == '%':
-                        result = left_operand % right_operand
-                    elif item_value == '~':
-                        result = left_operand ** right_operand
-                    elif item_value == '>':
-                        result = left_operand > right_operand
-                    elif item_value == '<':
-                        result = left_operand < right_operand
-                    elif item_value == '>=':
-                        result = left_operand >= right_operand
-                    elif item_value == '<=':
-                        result = left_operand <= right_operand
-                    elif item_value == '==':
-                        result = left_operand == right_operand
-                    elif item_value == '!=':
-                        result = left_operand != right_operand
-                    elif item_value == '&':
-                        result = left_operand and right_operand
-                    elif item_value == '|':
-                        result = left_operand or right_operand
-                    elif item_value == '^':
-                        result = left_operand ^ right_operand
-                    elif item_value == '=':
-                        result = right_operand
-                        if left_type == 'Var':
-                            self.symbol_dict[self.current_function][left_name]['value'] = result
+                    try:
+                        right_operand = stack.pop()
+                        right_type = type_stack.pop()
+                        right_name = name_stack.pop()
+                        left_operand = stack.pop()
+                        left_type = type_stack.pop()
+                        left_name = name_stack.pop()
+                    except:
+                        # 说明是正数或负数
+                        if item_value == '+':
+                            result = right_operand
                         else:
-                            print("赋值左值必须为变量!")
-                            raise ProgramError("赋值左值必须为变量!")
+                            result = -right_operand
+                    else:
+                        try:
+                            if item_value == '+':
+                                result = left_operand + right_operand
+                            elif item_value == '-':
+                                result = left_operand - right_operand
+                            elif item_value == '*':
+                                result = left_operand * right_operand
+                            elif item_value == '/':
+                                result = left_operand / right_operand
+                            elif item_value == '%':
+                                result = left_operand % right_operand
+                            elif item_value == '~':
+                                result = left_operand ** right_operand
+                            elif item_value == '>':
+                                result = left_operand > right_operand
+                            elif item_value == '<':
+                                result = left_operand < right_operand
+                            elif item_value == '>=':
+                                result = left_operand >= right_operand
+                            elif item_value == '<=':
+                                result = left_operand <= right_operand
+                            elif item_value == '==':
+                                result = left_operand == right_operand
+                            elif item_value == '!=':
+                                result = left_operand != right_operand
+                            elif item_value == '&':
+                                result = left_operand and right_operand
+                            elif item_value == '|':
+                                result = left_operand or right_operand
+                            elif item_value == '^':
+                                result = left_operand ^ right_operand
+                            elif item_value == '=':
+                                result = right_operand
+                                if left_type == 'Var':
+                                    self.symbol_dict[self.current_function][left_name]['value'] = result
+                                else:
+                                    print("赋值左值必须为变量!")
+                                    raise ProgramError("赋值左值必须为变量!")
+                        except TypeError as te:
+                            raise ProgramError(str(te))
 
                     stack.append(result)
                     type_stack.append('Cons')
@@ -2526,7 +2552,7 @@ class Semantic(object):
                 else:
                     print("operator {} not supported!".format(item_value))
                     raise ProgramError("operator {} not supported!".format(item_value))
-                    
+        
         return result
     
     # 表达式值返回-->用于Contorl语句
@@ -2537,7 +2563,10 @@ class Semantic(object):
         # 逆波兰表达式
         # 不优雅的实现方式：把Parser类中已经生成好的逆波兰表达式通过extra_info属性传到了Semantic类。
         # TODO:直接通过语法树还原逆波兰表达式
-        reverse_polishexpression_statement = [tree.current for tree in node.extra_info]
+        if not node.extra_info:
+            raise ProgramError("不受支持的表达式形式!")
+        reverse_polishexpression_statement = [tree.current if tree.root.type !='FunctionCall' else tree.root.first_son for tree in node.extra_info]
+        
         result = self._traverse_statement_update(reverse_polishexpression_statement) # 赋值并更新
         if not isinstance(result,bool):
             if result == 0:
@@ -2562,7 +2591,7 @@ class Semantic(object):
                     raise ProgramError("变量{}未初始化!".format(item_value))
                     
                 stack.append(self.symbol_dict[self.current_function][item_value]['value'])
-            elif item_type == '_Constant':
+            elif item_type == 'DIGIT_CONSTANT':
                 if '.' in item_value:
                     stack.append(float(item_value))
                 else:
@@ -2573,7 +2602,20 @@ class Semantic(object):
                     stack.append(True)
                 else:
                     stack.append(False)
-
+    
+            elif item_type == 'FUNCTION_NAME':
+                if item_value not in self.symbol_dict:
+                    raise ProgramError("函数{}尚未声明，无法调用!".format(item_value))
+                else:
+                    self._function_call(item.father)
+                    func_name = item_value
+                    if func_name in self.function_return_value_dict:
+                        result = self.function_return_value_dict[func_name] 
+                        self.jump_flag = False
+                    else:
+                        result = None
+                    stack.append(result)
+                        
             elif item_type == '_Operator':
                 # 单目运算符
                 if item_value in child_operators[0]:
@@ -2587,41 +2629,53 @@ class Semantic(object):
                     stack.append(result)
                 # 双目运算符
                 elif item_value in child_operators[1]:
-                    right_operand = stack.pop()
-                    left_operand = stack.pop()
-                    if item_value == '+':
-                        result = left_operand + right_operand
-                    elif item_value == '-':
-                        result = left_operand - right_operand
-                    elif item_value == '*':
-                        result = left_operand * right_operand
-                    elif item_value == '/':
-                        result = left_operand / right_operand
-                    elif item_value == '%':
-                        result = left_operand % right_operand
-                    elif item_value == '~':
-                        result = left_operand ** right_operand
-                    elif item_value == '>':
-                        result = left_operand > right_operand
-                    elif item_value == '<':
-                        result = left_operand < right_operand
-                    elif item_value == '>=':
-                        result = left_operand >= right_operand
-                    elif item_value == '<=':
-                        result = left_operand <= right_operand
-                    elif item_value == '==':
-                        result = left_operand == right_operand
-                    elif item_value == '!=':
-                        result = left_operand != right_operand
-                    elif item_value == '&':
-                        result = left_operand and right_operand
-                    elif item_value == '|':
-                        result = left_operand or right_operand
-                    elif item_value == '^':
-                        result = left_operand ^ right_operand
-                    elif item_value == '=':
-                        result = right_operand
-                    stack.append(result)
+                    try:
+                        right_operand = stack.pop()
+                        left_operand = stack.pop()
+                    except:
+                        # 说明是正数或负数
+                        if item_value == '+':
+                            result = right_operand
+                        else:
+                            result = -right_operand
+                    else:
+                        try:
+                            if item_value == '+':
+                                result = left_operand + right_operand
+                            elif item_value == '-':
+                                result = left_operand - right_operand
+                            elif item_value == '*':
+                                result = left_operand * right_operand
+                            elif item_value == '/':
+                                result = left_operand / right_operand
+                            elif item_value == '%':
+                                result = left_operand % right_operand
+                            elif item_value == '~':
+                                result = left_operand ** right_operand
+                            elif item_value == '>':
+                                result = left_operand > right_operand
+                            elif item_value == '<':
+                                result = left_operand < right_operand
+                            elif item_value == '>=':
+                                result = left_operand >= right_operand
+                            elif item_value == '<=':
+                                result = left_operand <= right_operand
+                            elif item_value == '==':
+                                result = left_operand == right_operand
+                            elif item_value == '!=':
+                                result = left_operand != right_operand
+                            elif item_value == '&':
+                                result = left_operand and right_operand
+                            elif item_value == '|':
+                                result = left_operand or right_operand
+                            elif item_value == '^':
+                                result = left_operand ^ right_operand
+                            elif item_value == '=':
+                                result = right_operand
+                            stack.append(result)
+                            
+                        except TypeError as te:
+                            raise ProgramError(str(te))
                 else:
                     print("operator {} not supported!".format(item_value))
                     raise ProgramError("operator {} not supported!".format(item_value))
@@ -2651,7 +2705,7 @@ class Semantic(object):
                         break
                     current_node = current_node.right
                 self.traverse(current_node.first_son)
-
+   
             # 函数调用
             elif node.value == 'FunctionCall':
                 func_name = node.first_son.value
@@ -2701,26 +2755,39 @@ class Semantic(object):
     def traverse(self, node=None):
         self._handler_block(node)
         # break和continue语句
-        if self.loop_finish_flag:
+        if self.jump_flag:
             next_node = None
         # 其他正常句型
         else:
-            next_node = node.right
+            if not node:
+                return
+            else:
+                next_node = node.right
         while next_node:
             self._handler_block(next_node)
-            if self.loop_finish_flag:
+            if self.jump_flag:
                 next_node = None
             else:
                 next_node = next_node.right
 
-Lex = Lexer("testc.txt")
+
+
+with open("examples/isPrime.clike",'r')as f:
+    input_content = f.read()
+
+content = input_content
+# 词法
+Lex = Lexer()
 tokens = Lex.run()
 
+# 语法
 Par = Parser(tokens)
 Par.main()
-
 ast = Par.tree.root
 Par.display(ast)
 
+# 语义+执行
 Sem = Semantic(ast)
-Sem.traverse(Sem.main_node)
+
+
+    
