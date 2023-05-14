@@ -22,6 +22,13 @@
 - 增加`break`和`continue`关键字及其功能实现
 - 添加`bool`类型常量
 
+### V3.0
+
+2023 5.14
+
+- 增加了IDE界面，内嵌模拟控制台
+- 完善了大部分报错提醒
+
 ## Functions
 
 基本变量类型：int float string bool
@@ -42,22 +49,25 @@
 
 ## Example
 
-语法示例：
+语法示例：打印1~100的质数
 
 ~~~c
-func test(int a,int b){
-	if (a>b){
-		printf("yes");
-	}
-	return a;
-}
-
 func main(){
-	int a = 4;
-	int b = 3;
-	
-	for (int i = 0;i<5;i=i+1){
-		int result = test(a,b);
+	int i, j;
+
+	printf("Prime numbers between 1 and 100£º");
+
+	for (i = 2; i <= 100; i=i+1) {
+		for (j = 2; j < i; j=j+1) {
+			if (i % j == 0) {
+				break;
+			}
+		}
+
+		if (j == i) {
+			printf(i);
+			printf(" ");
+		}
 	}
 }
 ~~~
@@ -65,14 +75,17 @@ func main(){
 Output:
 
 ~~~
-yesyesyesyesyes
+Prime numbers between 1 and 100：2 3 5 7 11 13 17 19 23 29 31 37 41 43 47 53 59 61 67 71 73 79 83 89 97 
 ~~~
+
+## IDE
+
+![IDE](https://summerfoam233-image.oss-cn-beijing.aliyuncs.com/img/IDE.png)
 
 ## TODO
 
 - 增加函数递归调用功能
 - 增加数组变量类型
-- 美观的IDE界面以及友好的报错提醒
 - 字符串内支持引号
 
 ## Environment
